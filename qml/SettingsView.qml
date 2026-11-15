@@ -120,11 +120,11 @@ Item {
             }
 
             // ---- refresh interval -----------------------------------------
+            Item { width: parent.width; height: units.gu(1) }
             Label {
                 text: i18n.tr("Auto-refresh")
                 font.bold: true
                 textSize: Label.Large
-                topPadding: units.gu(1.5)
             }
             Row {
                 width: parent.width
@@ -141,11 +141,11 @@ Item {
             }
 
             // ---- tools ----------------------------------------------------
+            Item { width: parent.width; height: units.gu(1) }
             Label {
                 text: i18n.tr("Maintenance")
                 font.bold: true
                 textSize: Label.Large
-                topPadding: units.gu(1.5)
             }
             Button {
                 width: parent.width
@@ -179,11 +179,11 @@ Item {
             }
 
             // ---- about ----------------------------------------------------
+            Item { width: parent.width; height: units.gu(1) }
             Label {
                 text: i18n.tr("About")
                 font.bold: true
                 textSize: Label.Large
-                topPadding: units.gu(1.5)
             }
             Label {
                 width: parent.width

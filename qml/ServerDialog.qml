@@ -50,7 +50,7 @@ Dialog {
     }
     TextField {
         id: urlField
-        placeholderText: i18n.tr("Address, e.g. pi.hole or 192.168.1.2")
+        placeholderText: i18n.tr("Address (e.g. pi.hole)")
         text: dlg.server.url
         inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
     }

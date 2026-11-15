@@ -1,4 +1,5 @@
 import QtQuick 2.15
+import "Format.js" as Fmt
 
 Item {
     id: h
@@ -54,6 +55,11 @@ Item {
     property var toastItem: find(app, "toast")
 
     property var steps: [
+        // 0. formatting helpers
+        function(next) {
+            check("num() thousands separators", Fmt.num(1234567) === "1,234,567" && Fmt.num(999) === "999" && Fmt.num(1000) === "1,000" && Fmt.num(0) === "0" && Fmt.num(-12345) === "-12,345", [Fmt.num(1234567), Fmt.num(-12345)]);
+            next();
+        },
         // 1. add a server -> dashboard loads, one login only
         function(next) {
             check("starts without a server", !app.hasServer);

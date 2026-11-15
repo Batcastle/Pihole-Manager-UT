@@ -75,19 +75,30 @@ Item {
         model: view.shown
 
         PullToRefresh {
+            parent: list
             refreshing: view.loading
             onRefresh: view.refresh()
         }
 
-        header: Label {
-            visible: view.errorText !== ""
+        header: Item {
             width: list.width
-            height: visible ? implicitHeight + units.gu(2) : 0
-            leftPadding: units.gu(2)
-            rightPadding: units.gu(2)
-            wrapMode: Text.WordWrap
-            color: theme.palette.normal.negative
-            text: view.errorText
+            height: view.errorText !== "" ? errorLabel.paintedHeight + units.gu(2) : 0
+            visible: view.errorText !== ""
+
+            Label {
+                id: errorLabel
+                anchors {
+                    left: parent.left
+                    right: parent.right
+                    top: parent.top
+                    leftMargin: units.gu(2)
+                    rightMargin: units.gu(2)
+                    topMargin: units.gu(1)
+                }
+                wrapMode: Text.WordWrap
+                color: theme.palette.normal.negative
+                text: view.errorText
+            }
         }
 
         delegate: ListItem {

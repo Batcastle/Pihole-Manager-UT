@@ -1,0 +1,242 @@
+diff --git a/README.md b/README.md
+index 78525aa..a234a91 100644
+--- a/README.md
++++ b/README.md
+@@ -73,3 +73,16 @@ Lomiri look.
+ pip install PySide6-Essentials
+ python3 tests/run_tests.py
+ ```
++
++### Checking against the real Lomiri toolkit
++
++The PySide6 harness uses stand-ins for the Lomiri components, so it can't catch things the real toolkit
++rejects (unsupported properties, Qt 5 JS engine differences). `tests/smoke_lomiri.sh` launches the app on the
++real `qml-module-lomiri-components` + Qt 5 `qmlscene` (available from the Ubuntu 24.04 archive) under a
++virtual display and fails on any QML error:
++
++```sh
++sudo apt install qmlscene qml-module-lomiri-components qml-module-qt-labs-settings qml-module-qtquick2 xvfb suru-icon-theme
++./tests/smoke_lomiri.sh
++```
++
+diff --git a/qml/DashboardView.qml b/qml/DashboardView.qml
+index 5e3ce66..2359971 100644
+--- a/qml/DashboardView.qml
++++ b/qml/DashboardView.qml
+@@ -123,6 +123,7 @@ Item {
+         boundsBehavior: Flickable.DragAndOvershootBounds
+ 
+         PullToRefresh {
++            parent: flick
+             refreshing: view.loading
+             onRefresh: view.refresh()
+         }
+diff --git a/qml/DomainsView.qml b/qml/DomainsView.qml
+index 3e477a6..21729f6 100644
+--- a/qml/DomainsView.qml
++++ b/qml/DomainsView.qml
+@@ -75,19 +75,30 @@ Item {
+         model: view.shown
+ 
+         PullToRefresh {
++            parent: list
+             refreshing: view.loading
+             onRefresh: view.refresh()
+         }
+ 
+-        header: Label {
+-            visible: view.errorText !== ""
++        header: Item {
+             width: list.width
+-            height: visible ? implicitHeight + units.gu(2) : 0
+-            leftPadding: units.gu(2)
+-            rightPadding: units.gu(2)
+-            wrapMode: Text.WordWrap
+-            color: theme.palette.normal.negative
+-            text: view.errorText
++            height: view.errorText !== "" ? errorLabel.paintedHeight + units.gu(2) : 0
++            visible: view.errorText !== ""
++
++            Label {
++                id: errorLabel
++                anchors {
++                    left: parent.left
++                    right: parent.right
++                    top: parent.top
++                    leftMargin: units.gu(2)
++                    rightMargin: units.gu(2)
++                    topMargin: units.gu(1)
++                }
++                wrapMode: Text.WordWrap
++                color: theme.palette.normal.negative
++                text: view.errorText
++            }
+         }
+ 
+         delegate: ListItem {
+diff --git a/qml/Format.js b/qml/Format.js
+index a985bcc..29f7ccd 100644
+--- a/qml/Format.js
++++ b/qml/Format.js
+@@ -7,7 +7,14 @@ function pad(n) {
+ // 1234567 -> "1,234,567"
+ function num(n) {
+     if (n === null || n === undefined || isNaN(n)) return "–";
+-    return String(Math.round(Number(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
++    // (a lookahead regex gives doubled commas in Qt 5's JS engine, so do it by hand)
++    var s = String(Math.round(Math.abs(Number(n))));
++    var out = "";
++    while (s.length > 3) {
++        out = "," + s.slice(-3) + out;
++        s = s.slice(0, -3);
++    }
++    return (Number(n) < 0 ? "-" : "") + s + out;
+ }
+ 
+ function pct(p) {
+diff --git a/qml/QueriesView.qml b/qml/QueriesView.qml
+index 829262b..e7177ef 100644
+--- a/qml/QueriesView.qml
++++ b/qml/QueriesView.qml
+@@ -69,6 +69,7 @@ Item {
+         model: view.shown
+ 
+         PullToRefresh {
++            parent: list
+             refreshing: view.loading
+             onRefresh: view.refresh()
+         }
+diff --git a/qml/ServerDialog.qml b/qml/ServerDialog.qml
+index 5bd0e23..8a69735 100644
+--- a/qml/ServerDialog.qml
++++ b/qml/ServerDialog.qml
+@@ -50,7 +50,7 @@ Dialog {
+     }
+     TextField {
+         id: urlField
+-        placeholderText: i18n.tr("Address, e.g. pi.hole or 192.168.1.2")
++        placeholderText: i18n.tr("Address (e.g. pi.hole)")
+         text: dlg.server.url
+         inputMethodHints: Qt.ImhUrlCharactersOnly | Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+     }
+diff --git a/qml/SettingsView.qml b/qml/SettingsView.qml
+index 7446fc9..5bfd0d8 100644
+--- a/qml/SettingsView.qml
++++ b/qml/SettingsView.qml
+@@ -120,11 +120,11 @@ Item {
+             }
+ 
+             // ---- refresh interval -----------------------------------------
++            Item { width: parent.width; height: units.gu(1) }
+             Label {
+                 text: i18n.tr("Auto-refresh")
+                 font.bold: true
+                 textSize: Label.Large
+-                topPadding: units.gu(1.5)
+             }
+             Row {
+                 width: parent.width
+@@ -141,11 +141,11 @@ Item {
+             }
+ 
+             // ---- tools ----------------------------------------------------
++            Item { width: parent.width; height: units.gu(1) }
+             Label {
+                 text: i18n.tr("Maintenance")
+                 font.bold: true
+                 textSize: Label.Large
+-                topPadding: units.gu(1.5)
+             }
+             Button {
+                 width: parent.width
+@@ -179,11 +179,11 @@ Item {
+             }
+ 
+             // ---- about ----------------------------------------------------
++            Item { width: parent.width; height: units.gu(1) }
+             Label {
+                 text: i18n.tr("About")
+                 font.bold: true
+                 textSize: Label.Large
+-                topPadding: units.gu(1.5)
+             }
+             Label {
+                 width: parent.width
+diff --git a/tests/Harness.qml b/tests/Harness.qml
+index 1794937..50e9834 100644
+--- a/tests/Harness.qml
++++ b/tests/Harness.qml
+@@ -1,4 +1,5 @@
+ import QtQuick 2.15
++import "Format.js" as Fmt
+ 
+ Item {
+     id: h
+@@ -54,6 +55,11 @@ Item {
+     property var toastItem: find(app, "toast")
+ 
+     property var steps: [
++        // 0. formatting helpers
++        function(next) {
++            check("num() thousands separators", Fmt.num(1234567) === "1,234,567" && Fmt.num(999) === "999" && Fmt.num(1000) === "1,000" && Fmt.num(0) === "0" && Fmt.num(-12345) === "-12,345", [Fmt.num(1234567), Fmt.num(-12345)]);
++            next();
++        },
+         // 1. add a server -> dashboard loads, one login only
+         function(next) {
+             check("starts without a server", !app.hasServer);
+diff --git a/tests/qt5_format_test.qml b/tests/qt5_format_test.qml
+new file mode 100644
+index 0000000..94e24aa
+--- /dev/null
++++ b/tests/qt5_format_test.qml
+@@ -0,0 +1,15 @@
++import QtQuick 2.12
++import "../qml/Format.js" as Fmt
++
++// Run with the Qt 5 qmlscene (same JS engine as Ubuntu Touch):
++//   qmlscene tests/qt5_format_test.qml
++Item {
++    Component.onCompleted: {
++        var ok = Fmt.num(1234567) === "1,234,567" && Fmt.num(987654) === "987,654"
++              && Fmt.num(1000) === "1,000" && Fmt.num(12) === "12" && Fmt.num(-12345) === "-12,345"
++              && Fmt.pct(19.0001) === "19.0%" && Fmt.countdown(272) === "4:32"
++              && Fmt.isBlocked("GRAVITY") && !Fmt.isBlocked("FORWARDED");
++        console.log(ok ? "FORMAT TEST PASS" : "FORMAT TEST FAIL: " + Fmt.num(1234567));
++        Qt.quit();
++    }
++}
+diff --git a/tests/smoke_lomiri.sh b/tests/smoke_lomiri.sh
+new file mode 100755
+index 0000000..c251c83
+--- /dev/null
++++ b/tests/smoke_lomiri.sh
+@@ -0,0 +1,29 @@
++#!/bin/bash
++# Launch the app on the REAL Lomiri toolkit + Qt 5 qmlscene (as on Ubuntu Touch 24.04), headless,
++# and fail on any QML load error or runtime warning from the app's own files.
++#
++# One-time setup (Ubuntu 24.04 / Debian-based):
++#   sudo apt install qmlscene qml-module-lomiri-components qml-module-qt-labs-settings \
++#                    qml-module-qtquick2 xvfb suru-icon-theme
++#
++# With a Pi-hole (or tests/mock_pihole.py) listening, the app just shows its first-run screen;
++# this only checks that everything loads and renders without errors.
++set -u
++cd "$(dirname "$0")/.."
++export HOME=$(mktemp -d) UITK_ICON_THEME=suru XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/tmp/runtime-$(id -u)}
++mkdir -p "$XDG_RUNTIME_DIR"; chmod 700 "$XDG_RUNTIME_DIR"
++
++echo "== Format.js under Qt 5's JS engine"
++out=$(timeout 20 xvfb-run -a qmlscene tests/qt5_format_test.qml 2>&1)
++echo "$out" | grep "FORMAT TEST"
++echo "$out" | grep -q "FORMAT TEST PASS" || exit 1
++
++echo "== Launching app"
++log=$(mktemp)
++timeout 8 xvfb-run -a qmlscene qml/Main.qml > "$log" 2>&1
++code=$?
++# 124 = still running when the timeout hit = it started and stayed up
++if [ "$code" -ne 124 ]; then echo "App exited early (code $code):"; cat "$log"; exit 1; fi
++bad=$(grep -v "Connections: Implicitly defined\|'caller' is DEPRECATED\|XDG_RUNTIME_DIR" "$log")
++if [ -n "$bad" ]; then echo "Warnings/errors:"; echo "$bad"; exit 1; fi
++echo "OK: app starts and stays up with no QML errors"

@@ -123,6 +123,7 @@ Item {
         boundsBehavior: Flickable.DragAndOvershootBounds
 
         PullToRefresh {
+            parent: flick
             refreshing: view.loading
             onRefresh: view.refresh()
         }

@@ -73,3 +73,16 @@ Lomiri look.
 pip install PySide6-Essentials
 python3 tests/run_tests.py
 ```
+
+### Checking against the real Lomiri toolkit
+
+The PySide6 harness uses stand-ins for the Lomiri components, so it can't catch things the real toolkit
+rejects (unsupported properties, Qt 5 JS engine differences). `tests/smoke_lomiri.sh` launches the app on the
+real `qml-module-lomiri-components` + Qt 5 `qmlscene` (available from the Ubuntu 24.04 archive) under a
+virtual display and fails on any QML error:
+
+```sh
+sudo apt install qmlscene qml-module-lomiri-components qml-module-qt-labs-settings qml-module-qtquick2 xvfb suru-icon-theme
+./tests/smoke_lomiri.sh
+```
+

@@ -7,7 +7,14 @@ function pad(n) {
 // 1234567 -> "1,234,567"
 function num(n) {
     if (n === null || n === undefined || isNaN(n)) return "–";
-    return String(Math.round(Number(n))).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    // (a lookahead regex gives doubled commas in Qt 5's JS engine, so do it by hand)
+    var s = String(Math.round(Math.abs(Number(n))));
+    var out = "";
+    while (s.length > 3) {
+        out = "," + s.slice(-3) + out;
+        s = s.slice(0, -3);
+    }
+    return (Number(n) < 0 ? "-" : "") + s + out;
 }
 
 function pct(p) {

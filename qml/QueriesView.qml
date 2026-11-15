@@ -69,6 +69,7 @@ Item {
         model: view.shown
 
         PullToRefresh {
+            parent: list
             refreshing: view.loading
             onRefresh: view.refresh()
         }

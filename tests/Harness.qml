@@ -157,6 +157,39 @@ Item {
                 });
             });
         },
+        // 5b. adlists
+        function(next) {
+            var al = find(app, "adlistsView");
+            dv.listType = "adlists";
+            dv.refresh();
+            waitFor(function() { return al.lists.length === 3 && al.groups.length === 2; }, 4000, function(ok) {
+                check("adlists + groups loaded", ok, [al.lists.length, al.groups.length]);
+                check("adlist description", al.describe(al.lists[0]).indexOf("120,345 domains") === 0 && al.describe(al.lists[2]).indexOf("Disabled") === 0, al.describe(al.lists[0]));
+                check("failed download is flagged", al.problem(al.lists[1]) !== "" && al.problem(al.lists[0]) === "" && al.problem(al.lists[2]) === "");
+                h.snapshot("adlists");
+                al.update(al.lists[0], { enabled: false });
+                waitFor(function() { return JSON.parse(T.adlist("https://example.com/hosts.txt")).enabled === false; }, 3000, function(ok2) {
+                    var rec = JSON.parse(T.adlist("https://example.com/hosts.txt"));
+                    check("toggle disables adlist and keeps comment/groups", ok2 && rec.comment === "Main list" && rec.groups[0] === 0, rec);
+                    al.create({ address: "https://new.example.com/a b.txt", type: "block", comment: "mine", groups: [0, 1], enabled: true });
+                    waitFor(function() { return T.adlistCount() === 4; }, 3000, function(ok3) {
+                        var n = JSON.parse(T.adlist("https://new.example.com/a b.txt"));
+                        check("adlist created with groups", ok3 && n.groups.length === 2 && n.comment === "mine", n);
+                        al.create({ address: "https://new.example.com/a b.txt", type: "block", comment: "", groups: [0], enabled: true });
+                        waitFor(function() { return toastItem.opacity > 0; }, 2000, function(ok4) {
+                            check("duplicate adlist rejected with toast", ok4 && T.adlistCount() === 4);
+                            al.remove(al.lists[1]);   // address contains ? & = that must be encoded
+                            waitFor(function() { return T.adlistCount() === 3; }, 3000, function(ok5) {
+                                check("adlist deleted (url-encoded address + type)", ok5, T.adlistCount());
+                                check("PUT/DELETE carried ?type=", T.reqCount("/api/lists/https%3A%2F%2Fbad.example.net%2Flist%3Fx%3D1%26y%3D2?type=block") === 1);
+                                dv.listType = "deny";
+                                next();
+                            });
+                        });
+                    });
+                });
+            });
+        },
         // 6. actions with spinner
         function(next) {
             sec.selectedIndex = 3;
@@ -211,7 +244,7 @@ Item {
         function(next) {
             app.removeServer(0);
             check("server removed", !app.hasServer && app.api.baseUrl === "");
-            check("views reset", dash.summary === null && qv.queries.length === 0 && dv.domains.length === 0);
+            check("views reset", dash.summary === null && qv.queries.length === 0 && dv.domains.length === 0 && find(app, "adlistsView").lists.length === 0);
             h.snapshot("empty");
             next();
         }

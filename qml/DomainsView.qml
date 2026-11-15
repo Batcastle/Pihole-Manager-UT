@@ -2,7 +2,7 @@ import QtQuick 2.12
 import Lomiri.Components 1.3
 import "Format.js" as Fmt
 
-// Allow / deny list management.
+// Allow / deny list management, plus the adlists that feed gravity.
 Item {
     id: view
 
@@ -12,7 +12,7 @@ Item {
     property var domains: []
     property bool loading: false
     property string errorText: ""
-    property string listType: "deny"        // deny | allow
+    property string listType: "deny"        // deny | allow | adlists
 
     readonly property var shown: ofType(domains, listType)
 
@@ -27,10 +27,12 @@ Item {
     function reset() {
         domains = [];
         errorText = "";
+        adlistsView.reset();
     }
 
     function refresh() {
         if (!app || !app.hasServer) return;
+        if (listType === "adlists") { adlistsView.refresh(); return; }
         loading = true;
         errorText = "";
         app.api.call("GET", "/domains", null, function(err, data) {
@@ -41,6 +43,7 @@ Item {
     }
 
     function addDomain() {
+        if (listType === "adlists") { adlistsView.addAdlist(); return; }
         app.openAddDomain({ listType: view.listType });
     }
 
@@ -58,8 +61,11 @@ Item {
     Sections {
         id: typeSections
         anchors { top: parent.top; left: parent.left; right: parent.right; margins: units.gu(1) }
-        model: [i18n.tr("Blocked"), i18n.tr("Allowed")]
-        onSelectedIndexChanged: view.listType = (selectedIndex === 0 ? "deny" : "allow")
+        model: [i18n.tr("Blocked"), i18n.tr("Allowed"), i18n.tr("Adlists")]
+        onSelectedIndexChanged: {
+            view.listType = (selectedIndex === 0 ? "deny" : (selectedIndex === 1 ? "allow" : "adlists"));
+            if (view.active) view.refresh();
+        }
     }
 
     ListView {
@@ -72,6 +78,7 @@ Item {
             bottom: parent.bottom
         }
         clip: true
+        visible: view.listType !== "adlists"
         model: view.shown
 
         PullToRefresh {
@@ -152,7 +159,7 @@ Item {
 
     Label {
         anchors.centerIn: parent
-        visible: !view.loading && view.errorText === "" && view.shown.length === 0
+        visible: view.listType !== "adlists" && !view.loading && view.errorText === "" && view.shown.length === 0
         horizontalAlignment: Text.AlignHCenter
         width: parent.width - units.gu(6)
         wrapMode: Text.WordWrap
@@ -166,5 +173,19 @@ Item {
         anchors.centerIn: parent
         running: view.loading && view.domains.length === 0
         visible: running
+    }
+
+    AdlistsView {
+        id: adlistsView
+        objectName: "adlistsView"
+        anchors {
+            top: typeSections.bottom
+            topMargin: units.gu(1)
+            left: parent.left
+            right: parent.right
+            bottom: parent.bottom
+        }
+        app: view.app
+        visible: view.listType === "adlists"
     }
 }

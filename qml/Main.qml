@@ -160,23 +160,34 @@ MainView {
         var body = { domain: domain, comment: comment || i18n.tr("Added from Pi-hole Manager"), enabled: true };
         apiClient.call("POST", "/domains/" + type + "/" + kind, body, function(err, data) {
             if (err) { toast(err.message, true); return; }
-            var errors = (data && data.processed && data.processed.errors) ? data.processed.errors : [];
-            if (errors.length > 0) {
-                toast(errors[0].error || i18n.tr("Pi-hole rejected that entry"), true);
-                return;
-            }
+            var problem = processedError(data);
+            if (problem !== "") { toast(problem, true); return; }
             toast(type === "deny" ? i18n.tr("Blocked %1").arg(domain) : i18n.tr("Allowed %1").arg(domain), false);
             if (sections.selectedIndex === 2) domainsView.refresh();
         });
     }
 
+    // First error Pi-hole reported in a create/update response ("" when there was none).
+    function processedError(data) {
+        var errors = (data && data.processed && data.processed.errors) ? data.processed.errors : [];
+        if (errors.length === 0) return "";
+        return errors[0].error || i18n.tr("Pi-hole rejected that entry");
+    }
+
+    function openAdlistDialog(props, onSubmitted) {
+        var d = PopupUtils.open(adlistDialog, root, props || {});
+        d.submitted.connect(onSubmitted);
+        return d;
+    }
+
     // POST an action endpoint (gravity, restart DNS, …) with a modal spinner.
-    function runAction(busyLabel, path, doneText, timeoutMs) {
+    function runAction(busyLabel, path, doneText, timeoutMs, onDone) {
         busyText = busyLabel;
         apiClient.call("POST", path, null, function(err) {
             busyText = "";
             if (err) toast(err.message, true);
             else toast(doneText, false);
+            if (onDone) onDone(err);
         }, { raw: true, timeout: timeoutMs });
     }
 
@@ -184,6 +195,7 @@ MainView {
     Component { id: confirmDialog; ConfirmDialog {} }
     Component { id: disableDialog; DisableDialog {} }
     Component { id: addDomainDialog; AddDomainDialog {} }
+    Component { id: adlistDialog; AdlistDialog {} }
 
     Component {
         id: domainActionDialog
@@ -221,7 +233,7 @@ MainView {
             trailingActionBar.actions: [
                 Action {
                     iconName: "add"
-                    text: i18n.tr("Add domain")
+                    text: domainsView.listType === "adlists" ? i18n.tr("Add adlist") : i18n.tr("Add domain")
                     visible: sections.selectedIndex === 2 && root.hasServer
                     onTriggered: domainsView.addDomain()
                 },
@@ -241,7 +253,7 @@ MainView {
                     leftMargin: units.gu(2)
                     bottom: parent.bottom
                 }
-                model: [i18n.tr("Dashboard"), i18n.tr("Queries"), i18n.tr("Domains"), i18n.tr("More")]
+                model: [i18n.tr("Dashboard"), i18n.tr("Queries"), i18n.tr("Lists"), i18n.tr("More")]
             }
         }
 

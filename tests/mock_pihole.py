@@ -17,6 +17,16 @@ class State:
             {"domain": "(\\.|^)tracker\\.net$", "type": "deny", "kind": "regex", "comment": None, "groups": [0], "enabled": False, "id": 2},
             {"domain": "good.example.org", "type": "allow", "kind": "exact", "comment": None, "groups": [0], "enabled": True, "id": 3},
         ]
+        now = int(time.time())
+        self.lists = [
+            {"address": "https://example.com/hosts.txt", "type": "block", "comment": "Main list", "groups": [0], "enabled": True, "id": 1,
+             "date_added": now - 90000, "date_modified": now - 90000, "date_updated": now - 7200, "number": 120345, "invalid_domains": 0, "abp_entries": 0, "status": 2},
+            {"address": "https://bad.example.net/list?x=1&y=2", "type": "block", "comment": None, "groups": [0], "enabled": True, "id": 2,
+             "date_added": now - 5000, "date_modified": now - 5000, "date_updated": 0, "number": 0, "invalid_domains": 0, "abp_entries": 0, "status": 4},
+            {"address": "https://allow.example.org/allow.txt", "type": "allow", "comment": None, "groups": [0], "enabled": False, "id": 3,
+             "date_added": now - 5000, "date_modified": now - 5000, "date_updated": now - 100, "number": 12, "invalid_domains": 0, "abp_entries": 0, "status": 1},
+        ]
+        self.groups = [{"name": "Default", "comment": None, "enabled": True, "id": 0}, {"name": "Kids", "comment": "children", "enabled": True, "id": 1}]
         self.next_id = 10
         self.lock = threading.Lock()
 
@@ -122,6 +132,34 @@ def make_server(state, port=0):
                 if len(state.domains) == before:
                     return self._send(404, {"error": {"key": "not_found", "message": "Item not found", "hint": dom}})
                 self.send_response(204); self.send_header("Content-Length", "0"); self.end_headers(); return
+            if path == "/api/groups" and method == "GET":
+                return self._send(200, {"groups": state.groups})
+            if path == "/api/lists" and method == "GET":
+                want = q.get("type", [None])[0]
+                return self._send(200, {"lists": [l for l in state.lists if want in (None, l["type"])]})
+            if path == "/api/lists" and method == "POST":
+                t = q.get("type", ["block"])[0]
+                addr = body.get("address")
+                if any(l["address"] == addr and l["type"] == t for l in state.lists):
+                    return self._send(201, {"lists": [], "processed": {"success": [], "errors": [{"item": addr, "error": "UNIQUE constraint failed: adlist.address, adlist.type"}]}})
+                state.next_id += 1
+                state.lists.append({"address": addr, "type": t, "comment": body.get("comment"), "groups": body.get("groups", [0]), "enabled": body.get("enabled", True),
+                                    "id": state.next_id, "date_added": int(time.time()), "date_modified": int(time.time()), "date_updated": 0, "number": 0,
+                                    "invalid_domains": 0, "abp_entries": 0, "status": 0})
+                return self._send(201, {"lists": [], "processed": {"success": [{"item": addr}], "errors": []}})
+            if path.startswith("/api/lists/") and method in ("PUT", "DELETE"):
+                addr = urllib.parse.unquote(path[len("/api/lists/"):])
+                t = q.get("type", [None])[0]
+                found = [l for l in state.lists if l["address"] == addr and t in (None, l["type"])]
+                if not found:
+                    return self._send(404, {"error": {"key": "not_found", "message": "Item not found", "hint": addr}})
+                if method == "DELETE":
+                    state.lists.remove(found[0])
+                    self.send_response(204); self.send_header("Content-Length", "0"); self.end_headers(); return
+                for k in ("comment", "groups", "enabled"):
+                    if k in body:
+                        found[0][k] = body[k]
+                return self._send(200, {"lists": [found[0]], "processed": {"success": [{"item": addr}], "errors": []}})
             if path == "/api/info/version":
                 v = lambda s: {"local": {"version": s}}
                 return self._send(200, {"version": {"core": v("v6.1"), "web": v("v6.1"), "ftl": v("v6.1.2")}})

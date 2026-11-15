@@ -48,6 +48,15 @@ function dateTime(ts) {
     return (d.getMonth() + 1) + "/" + d.getDate() + " " + t;
 }
 
+// epoch seconds -> "5 min ago" / "3 h ago" / "2 d ago"
+function ago(ts) {
+    var s = Math.max(0, Math.round(Date.now() / 1000 - ts));
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + " min ago";
+    if (s < 86400) return Math.floor(s / 3600) + " h ago";
+    return Math.floor(s / 86400) + " d ago";
+}
+
 var BLOCKED = {
     GRAVITY: 1, REGEX: 1, DENYLIST: 1,
     EXTERNAL_BLOCKED_IP: 1, EXTERNAL_BLOCKED_NULL: 1, EXTERNAL_BLOCKED_NXRA: 1,

@@ -26,6 +26,10 @@ MainView {
     readonly property bool hasServer: currentServer !== null
     property var api: apiClient
 
+    // Pi-hole groups, shared by the adlist and domain editors
+    readonly property var defaultGroups: [{ id: 0, name: "Default", enabled: true }]
+    property var groups: defaultGroups
+
     Settings {
         id: store
         category: "pihole-manager"
@@ -56,6 +60,7 @@ MainView {
 
     function applyServer() {
         apiClient.configure(hasServer ? currentServer.url : "", hasServer ? currentServer.password : "");
+        groups = defaultGroups;
         dashboardView.reset();
         queriesView.reset();
         domainsView.reset();
@@ -174,6 +179,19 @@ MainView {
         return errors[0].error || i18n.tr("Pi-hole rejected that entry");
     }
 
+    function refreshGroups() {
+        if (!hasServer) return;
+        apiClient.call("GET", "/groups", null, function(err, data) {
+            if (!err && data && data.groups && data.groups.length > 0) groups = data.groups;
+        });
+    }
+
+    function openDomainEditDialog(item, onSubmitted) {
+        var d = PopupUtils.open(domainEditDialog, root, { item: item, groups: groups });
+        d.submitted.connect(onSubmitted);
+        return d;
+    }
+
     function openAdlistDialog(props, onSubmitted) {
         var d = PopupUtils.open(adlistDialog, root, props || {});
         d.submitted.connect(onSubmitted);
@@ -196,6 +214,7 @@ MainView {
     Component { id: disableDialog; DisableDialog {} }
     Component { id: addDomainDialog; AddDomainDialog {} }
     Component { id: adlistDialog; AdlistDialog {} }
+    Component { id: domainEditDialog; DomainEditDialog {} }
 
     Component {
         id: domainActionDialog

@@ -146,11 +146,21 @@ Item {
                         waitFor(function() { return dv.domains.length === 4; }, 3000, function(ok4) {
                             check("list refreshed", ok4);
                             h.snapshot("domains");
-                            // regex entry has characters that must be URL-encoded
-                            dv.removeDomain({ type: "deny", kind: "regex", domain: "(\\.|^)tracker\\.net$" });
-                            waitFor(function() { return T.domainCount() === 3; }, 3000, function(ok5) {
-                                check("regex domain deleted (url-encoded)", ok5, T.domainCount());
-                                next();
+                            // editing: regex entry has characters that must be URL-encoded; PUT replaces the whole record
+                            var RX = "(\\.|^)tracker\\.net$";
+                            var rx = { domain: RX, type: "deny", kind: "regex", comment: null, groups: [0], enabled: false };
+                            dv.update(rx, { enabled: true, comment: "edited", groups: [0, 1] });
+                            waitFor(function() { var r = T.domainRec(RX); return r !== "" && JSON.parse(r).enabled === true; }, 3000, function(okE) {
+                                var rec = JSON.parse(T.domainRec(RX));
+                                check("domain entry edited (enabled/comment/groups, encoded path)", okE && rec.comment === "edited" && rec.groups.length === 2 && rec.kind === "regex", rec);
+                                check("edit sent as PUT", T.reqCountM("PUT", "/api/domains/deny/regex/") === 1);
+                                check("groups loaded for editors", app.groups.length === 2, app.groups);
+                                // removing it also needs the encoded path
+                                dv.removeDomain(rx);
+                                waitFor(function() { return T.domainCount() === 3; }, 3000, function(ok5) {
+                                    check("regex domain deleted (url-encoded)", ok5, T.domainCount());
+                                    next();
+                                });
                             });
                         });
                     });
@@ -162,8 +172,8 @@ Item {
             var al = find(app, "adlistsView");
             dv.listType = "adlists";
             dv.refresh();
-            waitFor(function() { return al.lists.length === 3 && al.groups.length === 2; }, 4000, function(ok) {
-                check("adlists + groups loaded", ok, [al.lists.length, al.groups.length]);
+            waitFor(function() { return al.lists.length === 3 && app.groups.length === 2; }, 4000, function(ok) {
+                check("adlists + groups loaded", ok, [al.lists.length, app.groups.length]);
                 check("adlist description", al.describe(al.lists[0]).indexOf("120,345 domains") === 0 && al.describe(al.lists[2]).indexOf("Disabled") === 0, al.describe(al.lists[0]));
                 check("failed download is flagged", al.problem(al.lists[1]) !== "" && al.problem(al.lists[0]) === "" && al.problem(al.lists[2]) === "");
                 h.snapshot("adlists");

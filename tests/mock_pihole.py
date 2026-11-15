@@ -124,6 +124,16 @@ def make_server(state, port=0):
                 state.next_id += 1
                 state.domains.append({"domain": dom, "type": t, "kind": k, "comment": body.get("comment"), "groups": [0], "enabled": True, "id": state.next_id})
                 return self._send(201, {"domains": [], "processed": {"success": [{"item": dom}], "errors": []}})
+            if path.startswith("/api/domains/") and method == "PUT":
+                parts = path.split("/")
+                t, k, dom = parts[3], parts[4], urllib.parse.unquote("/".join(parts[5:]))
+                found = [d for d in state.domains if d["domain"] == dom and d["type"] == t and d["kind"] == k]
+                if not found:
+                    return self._send(404, {"error": {"key": "not_found", "message": "Item not found", "hint": dom}})
+                for key in ("comment", "groups", "enabled"):
+                    if key in body:
+                        found[0][key] = body[key]
+                return self._send(200, {"domains": [found[0]], "processed": {"success": [{"item": dom}], "errors": []}})
             if path.startswith("/api/domains/") and method == "DELETE":
                 parts = path.split("/")
                 t, k, dom = parts[3], parts[4], urllib.parse.unquote("/".join(parts[5:]))

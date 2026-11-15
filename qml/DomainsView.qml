@@ -40,6 +40,36 @@ Item {
             if (err) { errorText = err.message; return; }
             domains = data.domains || [];
         });
+        app.refreshGroups();
+    }
+
+    function entryPath(item) {
+        return "/domains/" + item.type + "/" + item.kind + "/" + encodeURIComponent(item.domain);
+    }
+
+    // Pi-hole's PUT replaces the whole record, so always send every editable field.
+    function update(item, changes) {
+        var body = {
+            type: item.type,
+            kind: item.kind,
+            comment: item.comment === undefined ? null : item.comment,
+            groups: item.groups || [0],
+            enabled: item.enabled !== false
+        };
+        for (var k in changes) body[k] = changes[k];
+        app.api.call("PUT", entryPath(item), body, function(err, data) {
+            if (err) { app.toast(err.message, true); refresh(); return; }
+            var problem = app.processedError(data);
+            if (problem !== "") { app.toast(problem, true); refresh(); return; }
+            app.toast(i18n.tr("Saved"), false);
+            refresh();
+        });
+    }
+
+    function editDomain(item) {
+        app.openDomainEditDialog(item, function(result) {
+            view.update(item, { comment: result.comment || null, enabled: result.enabled, groups: result.groups });
+        });
     }
 
     function addDomain() {
@@ -48,8 +78,7 @@ Item {
     }
 
     function removeDomain(item) {
-        var path = "/domains/" + item.type + "/" + item.kind + "/" + encodeURIComponent(item.domain);
-        app.api.call("DELETE", path, null, function(err) {
+        app.api.call("DELETE", entryPath(item), null, function(err) {
             if (err) { app.toast(err.message, true); return; }
             app.toast(i18n.tr("Removed %1").arg(item.domain), false);
             refresh();
@@ -111,6 +140,8 @@ Item {
         delegate: ListItem {
             id: row
             height: units.gu(7)
+
+            onClicked: view.editDomain(modelData)
 
             leadingActions: ListItemActions {
                 actions: [

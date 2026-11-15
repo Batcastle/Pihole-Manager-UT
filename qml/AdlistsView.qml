@@ -10,13 +10,11 @@ Item {
     property bool active: false
 
     property var lists: []
-    property var groups: [{ id: 0, name: "Default", enabled: true }]
     property bool loading: false
     property string errorText: ""
 
     function reset() {
         lists = [];
-        groups = [{ id: 0, name: "Default", enabled: true }];
         errorText = "";
     }
 
@@ -29,9 +27,7 @@ Item {
             if (err) { errorText = err.message; return; }
             lists = data.lists || [];
         });
-        app.api.call("GET", "/groups", null, function(err, data) {
-            if (!err && data && data.groups && data.groups.length > 0) groups = data.groups;
-        });
+        app.refreshGroups();
     }
 
     function path(item) {
@@ -76,11 +72,11 @@ Item {
     }
 
     function addAdlist() {
-        app.openAdlistDialog({ editing: false, groups: view.groups }, function(result) { view.create(result); });
+        app.openAdlistDialog({ editing: false, groups: app.groups }, function(result) { view.create(result); });
     }
 
     function editAdlist(item) {
-        var d = app.openAdlistDialog({ editing: true, item: item, groups: view.groups }, function(result) {
+        var d = app.openAdlistDialog({ editing: true, item: item, groups: app.groups }, function(result) {
             view.update(item, { comment: result.comment || null, enabled: result.enabled, groups: result.groups });
         });
         d.removeRequested.connect(function() { view.remove(item); });

@@ -15,6 +15,11 @@ Item {
     property string filter: "all"       // all | blocked | allowed
     property string search: ""
 
+    // Server-side filters (exact matches): status, type, client, upstream, reply, dnssec
+    property var serverFilters: ({})
+    property var suggestions: null
+    readonly property int filterCount: Object.keys(serverFilters).length
+
     readonly property var shown: applyFilter(queries, filter, search)
 
     function applyFilter(list, f, s) {
@@ -38,13 +43,54 @@ Item {
         queries = [];
         limit = 100;
         errorText = "";
+        serverFilters = ({});
+        suggestions = null;
+    }
+
+    // filters -> query-string params. A client is either a hostname or an IP; Pi-hole filters them separately.
+    function filterParams(f, sugg) {
+        var p = { length: limit };
+        if (f.status) p.status = f.status;
+        if (f.type) p.type = f.type;
+        if (f.upstream) p.upstream = f.upstream;
+        if (f.reply) p.reply = f.reply;
+        if (f.dnssec) p.dnssec = f.dnssec;
+        if (f.client) {
+            var ips = (sugg && sugg.client_ip) ? sugg.client_ip : [];
+            if (ips.indexOf(f.client) >= 0)
+                p.client_ip = f.client;
+            else
+                p.client_name = f.client;
+        }
+        return p;
+    }
+
+    function loadSuggestions(cb) {
+        if (suggestions !== null) { if (cb) cb(); return; }
+        app.api.call("GET", "/queries/suggestions", null, function(err, data) {
+            if (!err && data && data.suggestions) suggestions = data.suggestions;
+            if (cb) cb();
+        });
+    }
+
+    function openFilters() {
+        loadSuggestions(function() {
+            var d = app.openQueryFilterDialog(serverFilters, suggestions || {});
+            d.applied.connect(function(filters) { view.setFilters(filters); });
+        });
+    }
+
+    function setFilters(filters) {
+        serverFilters = filters;
+        limit = 100;
+        refresh();
     }
 
     function refresh() {
         if (!app || !app.hasServer) return;
         loading = true;
         errorText = "";
-        app.api.call("GET", "/queries?length=" + limit, null, function(err, data) {
+        app.api.call("GET", "/queries" + app.api.qs(filterParams(serverFilters, suggestions)), null, function(err, data) {
             loading = false;
             if (err) { errorText = err.message; return; }
             queries = data.queries || [];
@@ -85,11 +131,22 @@ Item {
                 x: units.gu(1.5)
                 spacing: units.gu(1)
 
-                TextField {
+                Row {
                     width: parent.width
-                    placeholderText: i18n.tr("Filter by domain or client")
-                    inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
-                    onTextChanged: view.search = text
+                    spacing: units.gu(1)
+                    TextField {
+                        width: parent.width - filtersButton.width - parent.spacing
+                        placeholderText: i18n.tr("Filter by domain or client")
+                        inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText
+                        onTextChanged: view.search = text
+                    }
+                    Button {
+                        id: filtersButton
+                        width: units.gu(13)
+                        text: view.filterCount > 0 ? i18n.tr("Filters (%1)").arg(view.filterCount) : i18n.tr("Filters")
+                        color: view.filterCount > 0 ? theme.palette.normal.activity : theme.palette.normal.base
+                        onClicked: view.openFilters()
+                    }
                 }
 
                 Row {

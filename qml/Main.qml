@@ -156,6 +156,10 @@ MainView {
         });
     }
 
+    function openQueryFilterDialog(filters, suggestions) {
+        return PopupUtils.open(queryFilterDialog, root, { filters: filters, suggestions: suggestions });
+    }
+
     function openQueryDetail(query) {
         return PopupUtils.open(queryDetailDialog, root, { app: root, query: query });
     }
@@ -220,6 +224,7 @@ MainView {
     Component { id: adlistDialog; AdlistDialog {} }
     Component { id: domainEditDialog; DomainEditDialog {} }
     Component { id: queryDetailDialog; QueryDetailDialog {} }
+    Component { id: queryFilterDialog; QueryFilterDialog {} }
 
     Component {
         id: domainActionDialog

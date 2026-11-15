@@ -16,3 +16,4 @@ ActivityIndicator 1.3 ActivityIndicator.qml
 ActionBar 1.3 ActionBar.qml
 CheckBox 1.3 CheckBox.qml
 Switch 1.3 Switch.qml
+OptionSelector 1.3 OptionSelector.qml

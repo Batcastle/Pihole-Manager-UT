@@ -123,25 +123,81 @@ Item {
                 qv.limit = 200; qv.refresh();
                 waitFor(function() { return qv.queries.length === 200; }, 4000, function(ok2) {
                     check("load more", ok2, qv.queries.length);
-                    // detail rows
-                    var fwd = qv.queries[1];
-                    var rows = Fmt.queryDetails(fwd), byKey = {};
-                    for (var i = 0; i < rows.length; i++) byKey[rows[i].key] = rows[i].value;
-                    check("detail rows: client, reply, upstream, dnssec",
-                          byKey.client === "host1 (192.168.1.3)" && byKey.reply === "IP address" && byKey.upstream === "1.1.1.1#53" && byKey.dnssec === "Insecure" && byKey.replyTime === "1.4 ms" && byKey.cname === undefined && byKey.ede === undefined, byKey);
-                    check("detail rows: unknown reply time dropped", Fmt.queryDetails(qv.queries[2]).every(function(r) { return r.key !== "replyTime"; }));
-                    check("replyTime formatting", Fmt.replyTime(0.01) === "<0.1 ms" && Fmt.replyTime(48.4) === "48 ms" && Fmt.replyTime(1300) === "1.3 s" && Fmt.replyTime(-1) === "");
-                    // which list blocked it
-                    var dlgG = app.openQueryDetail(qv.queries[0]);      // GRAVITY, list_id 1
-                    var dlgR = app.openQueryDetail(qv.queries[3]);      // REGEX, domain id 2
-                    waitFor(function() { return dlgG.matched !== "" && dlgR.matched !== ""; }, 3000, function(ok3) {
-                        check("blocking adlist resolved from list_id", ok3 && dlgG.matched === "https://example.com/hosts.txt", dlgG.matched);
-                        check("blocking regex entry resolved from list_id", ok3 && dlgR.matched.indexOf("tracker") > 0 && dlgR.matched.indexOf("(regex)") > 0, dlgR.matched);
-                        var dlgC = app.openQueryDetail(qv.queries[2]);  // CACHE: nothing to resolve
-                        check("allowed query has no 'blocked by'", dlgC.matched === "" && dlgC.matchedKind === "");
-                        next();
+                    next();
+                });
+            });
+        },
+        // 4b. server-side query filters
+        function(next) {
+            var sugg = { client_ip: ["192.168.1.2"], client_name: ["host1"] };
+            var fp = qv.filterParams({ status: "GRAVITY", client: "host1", type: "A" }, sugg);
+            check("filterParams: hostname -> client_name", fp.client_name === "host1" && fp.client_ip === undefined && fp.status === "GRAVITY" && fp.length === qv.limit, fp);
+            check("filterParams: ip -> client_ip", qv.filterParams({ client: "192.168.1.2" }, sugg).client_ip === "192.168.1.2");
+            check("filterParams: empty filters send only length", Object.keys(qv.filterParams({}, null)).join() === "length");
+            check("filterCount starts at 0", qv.filterCount === 0);
+            qv.limit = 100;
+            qv.loadSuggestions(function() {
+                check("suggestions loaded", qv.suggestions && qv.suggestions.status.length === 5 && qv.suggestions.client_ip.length === 3);
+                var reqs = T.reqCount("/api/queries/suggestions");
+                qv.loadSuggestions(function() { check("suggestions are cached", T.reqCount("/api/queries/suggestions") === reqs); });
+                qv.setFilters({ status: "GRAVITY" });
+                waitFor(function() { return qv.queries.length === 50; }, 3000, function(ok1) {
+                    check("status filter applied by the server", ok1 && qv.queries.every(function(x) { return x.status === "GRAVITY"; }) && qv.filterCount === 1, qv.queries.length);
+                    check("status filter sent as ?status=", T.reqCount("status=GRAVITY") >= 1);
+                    qv.setFilters({ client: "192.168.1.3", upstream: "1.1.1.1#53" });
+                    waitFor(function() { return qv.queries.length > 0 && qv.queries.length < 50; }, 3000, function(ok2) {
+                        check("client_ip + upstream filters combine",
+                              ok2 && qv.queries.every(function(x) { return x.client.ip === "192.168.1.3" && x.status === "FORWARDED"; }) && qv.filterCount === 2, qv.queries.length);
+                        check("upstream with # is URL-encoded", T.reqCount("upstream=1.1.1.1%2353") >= 1);
+                        qv.setFilters({ client: "host2" });
+                        waitFor(function() { return qv.queries.length > 0 && qv.queries.every(function(x) { return x.client.name === "host2"; }); }, 3000, function(ok3) {
+                            check("client_name filter", ok3 && T.reqCount("client_name=host2") >= 1);
+                            qv.setFilters({});
+                            waitFor(function() { return qv.queries.length === 100; }, 3000, function(ok4) {
+                                check("clearing filters restores the full log", ok4 && qv.filterCount === 0);
+                                qv.limit = 200; qv.refresh();
+                                waitFor(function() { return qv.queries.length === 200; }, 3000, function() { next(); });
+                            });
+                        });
                     });
                 });
+            });
+        },
+        // 4b'. filter dialog logic
+        function(next) {
+            var d = app.openQueryFilterDialog({ status: "GRAVITY" }, qv.suggestions);
+            check("filter dialog lists every filterable field", d.fields.length === 6 && d.fields[0].key === "status" && d.fields[2].key === "client", d.fields.length);
+            check("client choices are names then IPs", d.fields[2].values.join() === "host1,host2,192.168.1.2,192.168.1.3,192.168.1.4", d.fields[2].values);
+            check("status choices get readable labels", d.fields[0].texts[0] === "Blocked (blocklist)" && d.fields[0].texts[1] === "Allowed (forwarded)", d.fields[0].texts);
+            check("dialog starts from the active filters", d.selections.status === "GRAVITY" && Object.keys(d.selections).length === 1);
+            d.choose("client", "host1"); d.choose("status", "");
+            check("choose() sets and clears selections", d.selections.client === "host1" && d.selections.status === undefined && qv.serverFilters.status === undefined);
+            var got = null;
+            d.applied.connect(function(f) { got = f; });
+            d.applied(d.selections);
+            check("applied signal carries selections", got && got.client === "host1");
+            var empty = app.openQueryFilterDialog({}, {});
+            check("no suggestions -> no fields", empty.fields.length === 0);
+            next();
+        },
+        // 4c. query detail rows
+        function(next) {
+            var fwd = qv.queries[1];
+            var rows = Fmt.queryDetails(fwd), byKey = {};
+            for (var i = 0; i < rows.length; i++) byKey[rows[i].key] = rows[i].value;
+            check("detail rows: client, reply, upstream, dnssec",
+                  byKey.client === "host1 (192.168.1.3)" && byKey.reply === "IP address" && byKey.upstream === "1.1.1.1#53" && byKey.dnssec === "Insecure" && byKey.replyTime === "1.4 ms" && byKey.cname === undefined && byKey.ede === undefined, byKey);
+            check("detail rows: unknown reply time dropped", Fmt.queryDetails(qv.queries[2]).every(function(r) { return r.key !== "replyTime"; }));
+            check("replyTime formatting", Fmt.replyTime(0.01) === "<0.1 ms" && Fmt.replyTime(48.4) === "48 ms" && Fmt.replyTime(1300) === "1.3 s" && Fmt.replyTime(-1) === "");
+            // which list blocked it
+            var dlgG = app.openQueryDetail(qv.queries[0]);      // GRAVITY, list_id 1
+            var dlgR = app.openQueryDetail(qv.queries[3]);      // REGEX, domain id 2
+            waitFor(function() { return dlgG.matched !== "" && dlgR.matched !== ""; }, 3000, function(ok3) {
+                check("blocking adlist resolved from list_id", ok3 && dlgG.matched === "https://example.com/hosts.txt", dlgG.matched);
+                check("blocking regex entry resolved from list_id", ok3 && dlgR.matched.indexOf("tracker") > 0 && dlgR.matched.indexOf("(regex)") > 0, dlgR.matched);
+                var dlgC = app.openQueryDetail(qv.queries[2]);  // CACHE: nothing to resolve
+                check("allowed query has no 'blocked by'", dlgC.matched === "" && dlgC.matchedKind === "");
+                next();
             });
         },
         // 5. domains

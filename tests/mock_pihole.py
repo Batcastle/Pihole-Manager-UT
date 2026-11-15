@@ -108,17 +108,34 @@ def make_server(state, port=0):
                 return self._send(200, {"domains": [{"domain": n, "count": 100 - i * 20} for i, n in enumerate(names)]})
             if path == "/api/stats/top_clients":
                 return self._send(200, {"clients": [{"name": "laptop", "ip": "192.168.1.5", "count": 90}, {"name": "", "ip": "192.168.1.9", "count": 40}]})
+            if path == "/api/queries/suggestions":
+                return self._send(200, {"suggestions": {"domain": [], "client_ip": ["192.168.1.2", "192.168.1.3", "192.168.1.4"], "client_name": ["host1", "host2"],
+                                                        "upstream": ["1.1.1.1#53"], "type": ["A", "AAAA"],
+                                                        "status": ["GRAVITY", "FORWARDED", "CACHE", "REGEX", "DENYLIST"],
+                                                        "reply": ["IP", "NODATA"], "dnssec": ["INSECURE", "UNKNOWN"]}})
             if path == "/api/queries":
                 n = int(q.get("length", ["100"])[0])
                 sts = ["GRAVITY", "FORWARDED", "CACHE", "REGEX", "DENYLIST"]
                 list_ids = {"GRAVITY": 1, "REGEX": 2, "DENYLIST": 1}
-                return self._send(200, {"queries": [{"id": i, "time": time.time() - i * 5, "type": "A", "domain": "d%d.example.com" % i, "status": sts[i % 5],
-                                                     "client": {"ip": "192.168.1.%d" % (i % 3 + 2), "name": "host%d" % (i % 3) if i % 3 else None},
-                                                     "cname": None, "dnssec": "INSECURE" if i % 5 == 1 else "UNKNOWN",
-                                                     "reply": {"type": "IP", "time": 0.4 + i} if sts[i % 5] != "CACHE" else {"type": "NODATA", "time": -1},
-                                                     "list_id": list_ids.get(sts[i % 5]), "upstream": "1.1.1.1#53" if sts[i % 5] == "FORWARDED" else None,
-                                                     "ede": {"code": -1, "text": None}} for i in range(min(n, 250))],
-                                        "recordsTotal": 250})
+                items = []
+                for i in range(250):
+                    st = sts[i % 5]
+                    items.append({"id": i, "time": time.time() - i * 5, "type": "A" if i % 7 else "AAAA", "domain": "d%d.example.com" % i, "status": st,
+                                  "client": {"ip": "192.168.1.%d" % (i % 3 + 2), "name": "host%d" % (i % 3) if i % 3 else None},
+                                  "cname": None, "dnssec": "INSECURE" if i % 5 == 1 else "UNKNOWN",
+                                  "reply": {"type": "IP", "time": 0.4 + i} if st != "CACHE" else {"type": "NODATA", "time": -1},
+                                  "list_id": list_ids.get(st), "upstream": "1.1.1.1#53" if st == "FORWARDED" else None,
+                                  "ede": {"code": -1, "text": None}})
+                get = lambda k: q.get(k, [None])[0]
+                items = [it for it in items
+                         if (not get("status") or it["status"] == get("status"))
+                         and (not get("type") or it["type"] == get("type"))
+                         and (not get("client_ip") or it["client"]["ip"] == get("client_ip"))
+                         and (not get("client_name") or it["client"]["name"] == get("client_name"))
+                         and (not get("upstream") or it["upstream"] == get("upstream"))
+                         and (not get("reply") or it["reply"]["type"] == get("reply"))
+                         and (not get("dnssec") or it["dnssec"] == get("dnssec"))]
+                return self._send(200, {"queries": items[:n], "recordsTotal": len(items)})
             if path in ("/api/domains/deny", "/api/domains/allow") and method == "GET":
                 return self._send(200, {"domains": [d for d in state.domains if d["type"] == path.rsplit("/", 1)[1]]})
             if path == "/api/domains" and method == "GET":

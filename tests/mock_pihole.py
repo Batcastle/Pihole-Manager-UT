@@ -91,7 +91,8 @@ def make_server(state, port=0):
                 return self._send(401, {"error": {"key": "unauthorized", "message": "Unauthorized", "hint": None}})
 
             if path == "/api/stats/summary":
-                return self._send(200, {"queries": {"total": 1234567, "blocked": 234567, "percent_blocked": 19.0001, "unique_domains": 4321, "forwarded": 5000, "cached": 6000},
+                return self._send(200, {"queries": {"total": 1234567, "blocked": 234567, "percent_blocked": 19.0001, "unique_domains": 4321, "forwarded": 5000, "cached": 6000, "frequency": 1.4,
+                                                    "replies": {"IP": 5000, "NODATA": 400, "NXDOMAIN": 120, "CNAME": 0, "SERVFAIL": 3}},
                                         "clients": {"active": 7, "total": 9}, "gravity": {"domains_being_blocked": 987654, "last_update": 1}})
             if path == "/api/dns/blocking":
                 if method == "POST":
@@ -194,6 +195,14 @@ def make_server(state, port=0):
                     if k in body:
                         found[0][k] = body[k]
                 return self._send(200, {"lists": [found[0]], "processed": {"success": [{"item": addr}], "errors": []}})
+            if path == "/api/stats/query_types":
+                return self._send(200, {"types": {"A": 700, "AAAA": 200, "PTR": 50, "HTTPS": 30, "SRV": 0, "OTHER": 20}})
+            if path == "/api/stats/upstreams":
+                return self._send(200, {"upstreams": [
+                    {"ip": "cache", "name": None, "port": -1, "count": 600, "statistics": {"response": 0, "variance": 0}},
+                    {"ip": "1.1.1.1", "name": "one.one.one.one", "port": 53, "count": 300, "statistics": {"response": 0.0254856, "variance": 0.02}},
+                    {"ip": "127.0.0.1", "name": None, "port": 5335, "count": 100, "statistics": {"response": 1.5, "variance": 0.1}}],
+                    "forwarded_queries": 400, "total_queries": 1000})
             if path == "/api/info/version":
                 v = lambda s: {"local": {"version": s}}
                 return self._send(200, {"version": {"core": v("v6.1"), "web": v("v6.1"), "ftl": v("v6.1.2")}})

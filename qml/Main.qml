@@ -64,6 +64,7 @@ MainView {
         dashboardView.reset();
         queriesView.reset();
         domainsView.reset();
+        statsView.reset();
         settingsView.reset();
         refreshCurrent();
     }
@@ -111,7 +112,8 @@ MainView {
         case 0: dashboardView.refresh(); break;
         case 1: queriesView.refresh(); break;
         case 2: domainsView.refresh(); break;
-        case 3: settingsView.refresh(); break;
+        case 3: statsView.refresh(); break;
+        case 4: settingsView.refresh(); break;
         }
     }
 
@@ -279,10 +281,10 @@ MainView {
                 objectName: "sections"
                 anchors {
                     left: parent.left
-                    leftMargin: units.gu(2)
                     bottom: parent.bottom
                 }
-                model: [i18n.tr("Dashboard"), i18n.tr("Queries"), i18n.tr("Lists"), i18n.tr("More")]
+                width: parent.width
+                model: [i18n.tr("Home"), i18n.tr("Queries"), i18n.tr("Lists"), i18n.tr("Stats"), i18n.tr("More")]
             }
         }
 
@@ -319,19 +321,27 @@ MainView {
                 active: sections.selectedIndex === 2
                 visible: active
             }
+            StatsView {
+                id: statsView
+                objectName: "statsView"
+                anchors.fill: parent
+                app: root
+                active: sections.selectedIndex === 3
+                visible: active
+            }
             SettingsView {
                 id: settingsView
                 objectName: "settingsView"
                 anchors.fill: parent
                 app: root
-                active: sections.selectedIndex === 3
+                active: sections.selectedIndex === 4
                 visible: active
             }
 
             // first-run screen
             Rectangle {
                 anchors.fill: parent
-                visible: !root.hasServer && sections.selectedIndex !== 3
+                visible: !root.hasServer && sections.selectedIndex !== 4
                 color: theme.palette.normal.background
 
                 Column {

@@ -51,6 +51,7 @@ Item {
     property var qv: find(app, "queriesView")
     property var dv: find(app, "domainsView")
     property var sv: find(app, "settingsView")
+    property var stv: find(app, "statsView")
     property var sec: find(app, "sections")
     property var toastItem: find(app, "toast")
 
@@ -273,9 +274,24 @@ Item {
                 });
             });
         },
-        // 6. actions with spinner
+        // 5c. statistics tab
         function(next) {
             sec.selectedIndex = 3;
+            waitFor(function() { return stv.summary !== null && stv.queryTypes.length > 0 && stv.upstreams.length > 0; }, 4000, function(ok) {
+                check("stats loaded", ok);
+                check("query types: zeros dropped, biggest first", stv.queryTypes.length === 5 && stv.queryTypes[0].name === "A" && stv.queryTypes[4].name === "OTHER" && stv.queryTypes.every(function(t) { return t.count > 0; }), stv.queryTypes);
+                check("reply types labelled and sorted", stv.replies[0].name === "IP address" && stv.replies[1].name === "No data" && stv.replies.length === 4, stv.replies);
+                check("upstreams: names, ports, avg reply time",
+                      stv.upstreams[0].name === "cache" && stv.upstreams[1].name === "one.one.one.one · 25 ms" && stv.upstreams[2].name === "127.0.0.1#5335 · 1.5 s", stv.upstreams);
+                check("forwardedTotal sums upstream counts", stv.forwardedTotal === 1000);
+                check("cache share of all queries", stv.pctOfTotal(stv.summary.queries.cached) === "0.5%", stv.pctOfTotal(stv.summary.queries.cached));
+                h.snapshot("stats");
+                next();
+            });
+        },
+        // 6. actions with spinner
+        function(next) {
+            sec.selectedIndex = 4;
             app.runAction("Updating gravity…", "/action/gravity", "Gravity updated", 5000);
             check("spinner shown", app.busyText !== "");
             waitFor(function() { return app.busyText === ""; }, 4000, function(ok) {
@@ -327,7 +343,7 @@ Item {
         function(next) {
             app.removeServer(0);
             check("server removed", !app.hasServer && app.api.baseUrl === "");
-            check("views reset", dash.summary === null && qv.queries.length === 0 && dv.domains.length === 0 && find(app, "adlistsView").lists.length === 0);
+            check("views reset", dash.summary === null && qv.queries.length === 0 && dv.domains.length === 0 && find(app, "adlistsView").lists.length === 0 && stv.summary === null && stv.upstreams.length === 0);
             h.snapshot("empty");
             next();
         }

@@ -12,6 +12,7 @@ Rectangle {
     property string altKey: ""          // used when the name is empty (e.g. client IP)
     property color barColor: theme.palette.normal.positive
     property bool clickable: false
+    property real percentOf: 0          // when > 0, rows also show their share of this total
     signal itemClicked(var item)
 
     height: head.height + rows.height + units.gu(3.5)
@@ -98,7 +99,7 @@ Rectangle {
                         rightMargin: units.gu(1)
                         verticalCenter: parent.verticalCenter
                     }
-                    text: Fmt.num(modelData.count)
+                    text: Fmt.num(modelData.count) + (card.percentOf > 0 ? "  ·  " + Fmt.pct(100 * (modelData.count || 0) / card.percentOf) : "")
                     textSize: Label.Small
                     font.bold: true
                 }

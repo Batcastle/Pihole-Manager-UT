@@ -130,7 +130,7 @@ Item {
             height: units.gu(8)
             readonly property bool blocked: Fmt.isBlocked(modelData.status)
 
-            onClicked: view.app.domainActions(modelData.domain)
+            onClicked: view.app.openQueryDetail(modelData)
 
             Rectangle {
                 id: dot

@@ -156,7 +156,11 @@ MainView {
         });
     }
 
-    // Offered when tapping a domain in the query log or a top list.
+    function openQueryDetail(query) {
+        return PopupUtils.open(queryDetailDialog, root, { app: root, query: query });
+    }
+
+    // Offered when tapping a domain in a top list.
     function domainActions(domain) {
         PopupUtils.open(domainActionDialog, root, { domain: domain });
     }
@@ -215,6 +219,7 @@ MainView {
     Component { id: addDomainDialog; AddDomainDialog {} }
     Component { id: adlistDialog; AdlistDialog {} }
     Component { id: domainEditDialog; DomainEditDialog {} }
+    Component { id: queryDetailDialog; QueryDetailDialog {} }
 
     Component {
         id: domainActionDialog

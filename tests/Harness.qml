@@ -123,7 +123,24 @@ Item {
                 qv.limit = 200; qv.refresh();
                 waitFor(function() { return qv.queries.length === 200; }, 4000, function(ok2) {
                     check("load more", ok2, qv.queries.length);
-                    next();
+                    // detail rows
+                    var fwd = qv.queries[1];
+                    var rows = Fmt.queryDetails(fwd), byKey = {};
+                    for (var i = 0; i < rows.length; i++) byKey[rows[i].key] = rows[i].value;
+                    check("detail rows: client, reply, upstream, dnssec",
+                          byKey.client === "host1 (192.168.1.3)" && byKey.reply === "IP address" && byKey.upstream === "1.1.1.1#53" && byKey.dnssec === "Insecure" && byKey.replyTime === "1.4 ms" && byKey.cname === undefined && byKey.ede === undefined, byKey);
+                    check("detail rows: unknown reply time dropped", Fmt.queryDetails(qv.queries[2]).every(function(r) { return r.key !== "replyTime"; }));
+                    check("replyTime formatting", Fmt.replyTime(0.01) === "<0.1 ms" && Fmt.replyTime(48.4) === "48 ms" && Fmt.replyTime(1300) === "1.3 s" && Fmt.replyTime(-1) === "");
+                    // which list blocked it
+                    var dlgG = app.openQueryDetail(qv.queries[0]);      // GRAVITY, list_id 1
+                    var dlgR = app.openQueryDetail(qv.queries[3]);      // REGEX, domain id 2
+                    waitFor(function() { return dlgG.matched !== "" && dlgR.matched !== ""; }, 3000, function(ok3) {
+                        check("blocking adlist resolved from list_id", ok3 && dlgG.matched === "https://example.com/hosts.txt", dlgG.matched);
+                        check("blocking regex entry resolved from list_id", ok3 && dlgR.matched.indexOf("tracker") > 0 && dlgR.matched.indexOf("(regex)") > 0, dlgR.matched);
+                        var dlgC = app.openQueryDetail(qv.queries[2]);  // CACHE: nothing to resolve
+                        check("allowed query has no 'blocked by'", dlgC.matched === "" && dlgC.matchedKind === "");
+                        next();
+                    });
                 });
             });
         },

@@ -111,9 +111,16 @@ def make_server(state, port=0):
             if path == "/api/queries":
                 n = int(q.get("length", ["100"])[0])
                 sts = ["GRAVITY", "FORWARDED", "CACHE", "REGEX", "DENYLIST"]
+                list_ids = {"GRAVITY": 1, "REGEX": 2, "DENYLIST": 1}
                 return self._send(200, {"queries": [{"id": i, "time": time.time() - i * 5, "type": "A", "domain": "d%d.example.com" % i, "status": sts[i % 5],
-                                                     "client": {"ip": "192.168.1.%d" % (i % 3 + 2), "name": "host%d" % (i % 3) if i % 3 else None}} for i in range(min(n, 250))],
+                                                     "client": {"ip": "192.168.1.%d" % (i % 3 + 2), "name": "host%d" % (i % 3) if i % 3 else None},
+                                                     "cname": None, "dnssec": "INSECURE" if i % 5 == 1 else "UNKNOWN",
+                                                     "reply": {"type": "IP", "time": 0.4 + i} if sts[i % 5] != "CACHE" else {"type": "NODATA", "time": -1},
+                                                     "list_id": list_ids.get(sts[i % 5]), "upstream": "1.1.1.1#53" if sts[i % 5] == "FORWARDED" else None,
+                                                     "ede": {"code": -1, "text": None}} for i in range(min(n, 250))],
                                         "recordsTotal": 250})
+            if path in ("/api/domains/deny", "/api/domains/allow") and method == "GET":
+                return self._send(200, {"domains": [d for d in state.domains if d["type"] == path.rsplit("/", 1)[1]]})
             if path == "/api/domains" and method == "GET":
                 return self._send(200, {"domains": state.domains})
             if path.startswith("/api/domains/") and method == "POST":

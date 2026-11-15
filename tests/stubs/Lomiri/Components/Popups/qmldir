@@ -1,0 +1,3 @@
+module Lomiri.Components.Popups
+Dialog 1.3 Dialog.qml
+singleton PopupUtils 1.3 PopupUtils.qml

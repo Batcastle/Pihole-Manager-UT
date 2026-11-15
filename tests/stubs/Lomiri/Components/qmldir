@@ -1,0 +1,16 @@
+module Lomiri.Components
+MainView 1.3 MainView.qml
+Page 1.3 Page.qml
+PageHeader 1.3 PageHeader.qml
+Sections 1.3 Sections.qml
+Action 1.3 Action.qml
+Label 1.3 Label.qml
+Button 1.3 Button.qml
+TextField 1.3 TextField.qml
+Icon 1.3 Icon.qml
+ListItem 1.3 ListItem.qml
+ListItemActions 1.3 ListItemActions.qml
+AbstractButton 1.3 AbstractButton.qml
+PullToRefresh 1.3 PullToRefresh.qml
+ActivityIndicator 1.3 ActivityIndicator.qml
+ActionBar 1.3 ActionBar.qml

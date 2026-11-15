@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=Pi-hole Manager
+Comment=Monitor and control your Pi-hole
+Exec=qmlscene %u qml/Main.qml
+Icon=assets/logo.svg
+Terminal=false
+Type=Application
+X-Lomiri-Touch=true
+X-Ubuntu-Touch=true

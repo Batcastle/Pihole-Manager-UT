@@ -62,6 +62,22 @@ class Bridge(QObject):
     def domainCount(self): return len(s_v6.domains)
     @Slot(result=str)
     def blockingState(self): return s_v6.blocking
+    @Slot(str, str, result=int)
+    def reqCountM(self, method, sub): return sum(1 for m, p, _ in s_v6.log if m == method and sub in p)
+    @Slot(str, result=str)
+    def domainRec(self, name):
+        for d in s_v6.domains:
+            if d["domain"] == name:
+                return json.dumps(d)
+        return ""
+    @Slot(result=int)
+    def adlistCount(self): return len(s_v6.lists)
+    @Slot(str, result=str)
+    def adlist(self, addr):
+        for l in s_v6.lists:
+            if l["address"] == addr:
+                return json.dumps(l)
+        return ""
 
 app = QGuiApplication(sys.argv)
 QCoreApplication.setOrganizationName("t"); QCoreApplication.setApplicationName("t")

@@ -51,6 +51,7 @@ Item {
     property var qv: find(app, "queriesView")
     property var dv: find(app, "domainsView")
     property var sv: find(app, "settingsView")
+    property var stv: find(app, "statsView")
     property var sec: find(app, "sections")
     property var toastItem: find(app, "toast")
 
@@ -127,6 +128,79 @@ Item {
                 });
             });
         },
+        // 4b. server-side query filters
+        function(next) {
+            var sugg = { client_ip: ["192.168.1.2"], client_name: ["host1"] };
+            var fp = qv.filterParams({ status: "GRAVITY", client: "host1", type: "A" }, sugg);
+            check("filterParams: hostname -> client_name", fp.client_name === "host1" && fp.client_ip === undefined && fp.status === "GRAVITY" && fp.length === qv.limit, fp);
+            check("filterParams: ip -> client_ip", qv.filterParams({ client: "192.168.1.2" }, sugg).client_ip === "192.168.1.2");
+            check("filterParams: empty filters send only length", Object.keys(qv.filterParams({}, null)).join() === "length");
+            check("filterCount starts at 0", qv.filterCount === 0);
+            qv.limit = 100;
+            qv.loadSuggestions(function() {
+                check("suggestions loaded", qv.suggestions && qv.suggestions.status.length === 5 && qv.suggestions.client_ip.length === 3);
+                var reqs = T.reqCount("/api/queries/suggestions");
+                qv.loadSuggestions(function() { check("suggestions are cached", T.reqCount("/api/queries/suggestions") === reqs); });
+                qv.setFilters({ status: "GRAVITY" });
+                waitFor(function() { return qv.queries.length === 50; }, 3000, function(ok1) {
+                    check("status filter applied by the server", ok1 && qv.queries.every(function(x) { return x.status === "GRAVITY"; }) && qv.filterCount === 1, qv.queries.length);
+                    check("status filter sent as ?status=", T.reqCount("status=GRAVITY") >= 1);
+                    qv.setFilters({ client: "192.168.1.3", upstream: "1.1.1.1#53" });
+                    waitFor(function() { return qv.queries.length > 0 && qv.queries.length < 50; }, 3000, function(ok2) {
+                        check("client_ip + upstream filters combine",
+                              ok2 && qv.queries.every(function(x) { return x.client.ip === "192.168.1.3" && x.status === "FORWARDED"; }) && qv.filterCount === 2, qv.queries.length);
+                        check("upstream with # is URL-encoded", T.reqCount("upstream=1.1.1.1%2353") >= 1);
+                        qv.setFilters({ client: "host2" });
+                        waitFor(function() { return qv.queries.length > 0 && qv.queries.every(function(x) { return x.client.name === "host2"; }); }, 3000, function(ok3) {
+                            check("client_name filter", ok3 && T.reqCount("client_name=host2") >= 1);
+                            qv.setFilters({});
+                            waitFor(function() { return qv.queries.length === 100; }, 3000, function(ok4) {
+                                check("clearing filters restores the full log", ok4 && qv.filterCount === 0);
+                                qv.limit = 200; qv.refresh();
+                                waitFor(function() { return qv.queries.length === 200; }, 3000, function() { next(); });
+                            });
+                        });
+                    });
+                });
+            });
+        },
+        // 4b'. filter dialog logic
+        function(next) {
+            var d = app.openQueryFilterDialog({ status: "GRAVITY" }, qv.suggestions);
+            check("filter dialog lists every filterable field", d.fields.length === 6 && d.fields[0].key === "status" && d.fields[2].key === "client", d.fields.length);
+            check("client choices are names then IPs", d.fields[2].values.join() === "host1,host2,192.168.1.2,192.168.1.3,192.168.1.4", d.fields[2].values);
+            check("status choices get readable labels", d.fields[0].texts[0] === "Blocked (blocklist)" && d.fields[0].texts[1] === "Allowed (forwarded)", d.fields[0].texts);
+            check("dialog starts from the active filters", d.selections.status === "GRAVITY" && Object.keys(d.selections).length === 1);
+            d.choose("client", "host1"); d.choose("status", "");
+            check("choose() sets and clears selections", d.selections.client === "host1" && d.selections.status === undefined && qv.serverFilters.status === undefined);
+            var got = null;
+            d.applied.connect(function(f) { got = f; });
+            d.applied(d.selections);
+            check("applied signal carries selections", got && got.client === "host1");
+            var empty = app.openQueryFilterDialog({}, {});
+            check("no suggestions -> no fields", empty.fields.length === 0);
+            next();
+        },
+        // 4c. query detail rows
+        function(next) {
+            var fwd = qv.queries[1];
+            var rows = Fmt.queryDetails(fwd), byKey = {};
+            for (var i = 0; i < rows.length; i++) byKey[rows[i].key] = rows[i].value;
+            check("detail rows: client, reply, upstream, dnssec",
+                  byKey.client === "host1 (192.168.1.3)" && byKey.reply === "IP address" && byKey.upstream === "1.1.1.1#53" && byKey.dnssec === "Insecure" && byKey.replyTime === "1.4 ms" && byKey.cname === undefined && byKey.ede === undefined, byKey);
+            check("detail rows: unknown reply time dropped", Fmt.queryDetails(qv.queries[2]).every(function(r) { return r.key !== "replyTime"; }));
+            check("replyTime formatting", Fmt.replyTime(0.01) === "<0.1 ms" && Fmt.replyTime(48.4) === "48 ms" && Fmt.replyTime(1300) === "1.3 s" && Fmt.replyTime(-1) === "");
+            // which list blocked it
+            var dlgG = app.openQueryDetail(qv.queries[0]);      // GRAVITY, list_id 1
+            var dlgR = app.openQueryDetail(qv.queries[3]);      // REGEX, domain id 2
+            waitFor(function() { return dlgG.matched !== "" && dlgR.matched !== ""; }, 3000, function(ok3) {
+                check("blocking adlist resolved from list_id", ok3 && dlgG.matched === "https://example.com/hosts.txt", dlgG.matched);
+                check("blocking regex entry resolved from list_id", ok3 && dlgR.matched.indexOf("tracker") > 0 && dlgR.matched.indexOf("(regex)") > 0, dlgR.matched);
+                var dlgC = app.openQueryDetail(qv.queries[2]);  // CACHE: nothing to resolve
+                check("allowed query has no 'blocked by'", dlgC.matched === "" && dlgC.matchedKind === "");
+                next();
+            });
+        },
         // 5. domains
         function(next) {
             sec.selectedIndex = 2;
@@ -146,10 +220,53 @@ Item {
                         waitFor(function() { return dv.domains.length === 4; }, 3000, function(ok4) {
                             check("list refreshed", ok4);
                             h.snapshot("domains");
-                            // regex entry has characters that must be URL-encoded
-                            dv.removeDomain({ type: "deny", kind: "regex", domain: "(\\.|^)tracker\\.net$" });
-                            waitFor(function() { return T.domainCount() === 3; }, 3000, function(ok5) {
-                                check("regex domain deleted (url-encoded)", ok5, T.domainCount());
+                            // editing: regex entry has characters that must be URL-encoded; PUT replaces the whole record
+                            var RX = "(\\.|^)tracker\\.net$";
+                            var rx = { domain: RX, type: "deny", kind: "regex", comment: null, groups: [0], enabled: false };
+                            dv.update(rx, { enabled: true, comment: "edited", groups: [0, 1] });
+                            waitFor(function() { var r = T.domainRec(RX); return r !== "" && JSON.parse(r).enabled === true; }, 3000, function(okE) {
+                                var rec = JSON.parse(T.domainRec(RX));
+                                check("domain entry edited (enabled/comment/groups, encoded path)", okE && rec.comment === "edited" && rec.groups.length === 2 && rec.kind === "regex", rec);
+                                check("edit sent as PUT", T.reqCountM("PUT", "/api/domains/deny/regex/") === 1);
+                                check("groups loaded for editors", app.groups.length === 2, app.groups);
+                                // removing it also needs the encoded path
+                                dv.removeDomain(rx);
+                                waitFor(function() { return T.domainCount() === 3; }, 3000, function(ok5) {
+                                    check("regex domain deleted (url-encoded)", ok5, T.domainCount());
+                                    next();
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        },
+        // 5b. adlists
+        function(next) {
+            var al = find(app, "adlistsView");
+            dv.listType = "adlists";
+            dv.refresh();
+            waitFor(function() { return al.lists.length === 3 && app.groups.length === 2; }, 4000, function(ok) {
+                check("adlists + groups loaded", ok, [al.lists.length, app.groups.length]);
+                check("adlist description", al.describe(al.lists[0]).indexOf("120,345 domains") === 0 && al.describe(al.lists[2]).indexOf("Disabled") === 0, al.describe(al.lists[0]));
+                check("failed download is flagged", al.problem(al.lists[1]) !== "" && al.problem(al.lists[0]) === "" && al.problem(al.lists[2]) === "");
+                h.snapshot("adlists");
+                al.update(al.lists[0], { enabled: false });
+                waitFor(function() { return JSON.parse(T.adlist("https://example.com/hosts.txt")).enabled === false; }, 3000, function(ok2) {
+                    var rec = JSON.parse(T.adlist("https://example.com/hosts.txt"));
+                    check("toggle disables adlist and keeps comment/groups", ok2 && rec.comment === "Main list" && rec.groups[0] === 0, rec);
+                    al.create({ address: "https://new.example.com/a b.txt", type: "block", comment: "mine", groups: [0, 1], enabled: true });
+                    waitFor(function() { return T.adlistCount() === 4; }, 3000, function(ok3) {
+                        var n = JSON.parse(T.adlist("https://new.example.com/a b.txt"));
+                        check("adlist created with groups", ok3 && n.groups.length === 2 && n.comment === "mine", n);
+                        al.create({ address: "https://new.example.com/a b.txt", type: "block", comment: "", groups: [0], enabled: true });
+                        waitFor(function() { return toastItem.opacity > 0; }, 2000, function(ok4) {
+                            check("duplicate adlist rejected with toast", ok4 && T.adlistCount() === 4);
+                            al.remove(al.lists[1]);   // address contains ? & = that must be encoded
+                            waitFor(function() { return T.adlistCount() === 3; }, 3000, function(ok5) {
+                                check("adlist deleted (url-encoded address + type)", ok5, T.adlistCount());
+                                check("PUT/DELETE carried ?type=", T.reqCount("/api/lists/https%3A%2F%2Fbad.example.net%2Flist%3Fx%3D1%26y%3D2?type=block") === 1);
+                                dv.listType = "deny";
                                 next();
                             });
                         });
@@ -157,9 +274,24 @@ Item {
                 });
             });
         },
-        // 6. actions with spinner
+        // 5c. statistics tab
         function(next) {
             sec.selectedIndex = 3;
+            waitFor(function() { return stv.summary !== null && stv.queryTypes.length > 0 && stv.upstreams.length > 0; }, 4000, function(ok) {
+                check("stats loaded", ok);
+                check("query types: zeros dropped, biggest first", stv.queryTypes.length === 5 && stv.queryTypes[0].name === "A" && stv.queryTypes[4].name === "OTHER" && stv.queryTypes.every(function(t) { return t.count > 0; }), stv.queryTypes);
+                check("reply types labelled and sorted", stv.replies[0].name === "IP address" && stv.replies[1].name === "No data" && stv.replies.length === 4, stv.replies);
+                check("upstreams: names, ports, avg reply time",
+                      stv.upstreams[0].name === "cache" && stv.upstreams[1].name === "one.one.one.one · 25 ms" && stv.upstreams[2].name === "127.0.0.1#5335 · 1.5 s", stv.upstreams);
+                check("forwardedTotal sums upstream counts", stv.forwardedTotal === 1000);
+                check("cache share of all queries", stv.pctOfTotal(stv.summary.queries.cached) === "0.5%", stv.pctOfTotal(stv.summary.queries.cached));
+                h.snapshot("stats");
+                next();
+            });
+        },
+        // 6. actions with spinner
+        function(next) {
+            sec.selectedIndex = 4;
             app.runAction("Updating gravity…", "/action/gravity", "Gravity updated", 5000);
             check("spinner shown", app.busyText !== "");
             waitFor(function() { return app.busyText === ""; }, 4000, function(ok) {
@@ -211,7 +343,7 @@ Item {
         function(next) {
             app.removeServer(0);
             check("server removed", !app.hasServer && app.api.baseUrl === "");
-            check("views reset", dash.summary === null && qv.queries.length === 0 && dv.domains.length === 0);
+            check("views reset", dash.summary === null && qv.queries.length === 0 && dv.domains.length === 0 && find(app, "adlistsView").lists.length === 0 && stv.summary === null && stv.upstreams.length === 0);
             h.snapshot("empty");
             next();
         }

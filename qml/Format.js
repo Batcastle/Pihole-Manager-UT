@@ -48,6 +48,22 @@ function dateTime(ts) {
     return (d.getMonth() + 1) + "/" + d.getDate() + " " + t;
 }
 
+// epoch seconds -> "2026-11-15 18:29:44"
+function fullDateTime(ts) {
+    var d = new Date(ts * 1000);
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " "
+         + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+}
+
+// epoch seconds -> "5 min ago" / "3 h ago" / "2 d ago"
+function ago(ts) {
+    var s = Math.max(0, Math.round(Date.now() / 1000 - ts));
+    if (s < 60) return "just now";
+    if (s < 3600) return Math.floor(s / 60) + " min ago";
+    if (s < 86400) return Math.floor(s / 3600) + " h ago";
+    return Math.floor(s / 86400) + " d ago";
+}
+
 var BLOCKED = {
     GRAVITY: 1, REGEX: 1, DENYLIST: 1,
     EXTERNAL_BLOCKED_IP: 1, EXTERNAL_BLOCKED_NULL: 1, EXTERNAL_BLOCKED_NXRA: 1,
@@ -90,4 +106,66 @@ function statusLabel(status) {
 // "pi.hole:8080" -> "pi.hole:8080", "http://x/" -> "x"
 function hostOf(url) {
     return String(url || "").replace(/^https?:\/\//i, "").replace(/\/.*$/, "");
+}
+
+// reply time in ms (negative when unknown) -> "3.2 ms" / "48 ms" / "1.3 s"
+function replyTime(ms) {
+    if (ms === null || ms === undefined || isNaN(ms) || ms < 0) return "";
+    if (ms < 0.05) return "<0.1 ms";
+    if (ms < 10) return Number(ms).toFixed(1) + " ms";
+    if (ms < 1000) return Math.round(ms) + " ms";
+    return (ms / 1000).toFixed(1) + " s";
+}
+
+var REPLIES = {
+    NODATA: "No data", NXDOMAIN: "Domain doesn't exist", CNAME: "CNAME", IP: "IP address",
+    DOMAIN: "Domain", RRNAME: "RR name", SERVFAIL: "Server failure", REFUSED: "Refused",
+    NOTIMP: "Not implemented", DNSSEC: "DNSSEC", NONE: "No reply", BLOB: "Blob", OTHER: "Other", UNKNOWN: "Unknown"
+};
+
+function replyLabel(type) {
+    if (!type) return "";
+    return REPLIES[type] || String(type);
+}
+
+var DNSSEC = {
+    SECURE: "Secure", INSECURE: "Insecure", BOGUS: "Bogus", ABANDONED: "Abandoned", UNKNOWN: "Not checked"
+};
+
+function dnssecLabel(s) {
+    if (!s) return "";
+    return DNSSEC[s] || String(s);
+}
+
+// Which kind of list a blocked query matched, from its status: "adlist" | "domain" | "".
+function matchedList(status) {
+    switch (status) {
+    case "GRAVITY": case "GRAVITY_CNAME": return "adlist";
+    case "REGEX": case "REGEX_CNAME":
+    case "DENYLIST": case "DENYLIST_CNAME": return "domain";
+    }
+    return "";
+}
+
+// Flatten a /queries item into [{ key, value }] rows for the detail dialog (empty values are dropped).
+function queryDetails(q) {
+    var rows = [];
+    function add(key, value) {
+        if (value !== null && value !== undefined && value !== "") rows.push({ key: key, value: String(value) });
+    }
+    var client = q.client || {};
+    add("domain", q.domain);
+    add("time", q.time ? fullDateTime(q.time) : "");
+    add("type", q.type);
+    add("status", statusLabel(q.status));
+    add("client", client.name ? client.name + " (" + client.ip + ")" : client.ip);
+    var reply = q.reply || {};
+    add("reply", replyLabel(reply.type));
+    add("replyTime", replyTime(reply.time));
+    add("upstream", q.upstream);
+    add("cname", q.cname);
+    add("dnssec", dnssecLabel(q.dnssec));
+    if (q.ede && q.ede.code !== undefined && q.ede.code >= 0)
+        add("ede", q.ede.text ? q.ede.text + " (" + q.ede.code + ")" : q.ede.code);
+    return rows;
 }

@@ -26,6 +26,10 @@ MainView {
     readonly property bool hasServer: currentServer !== null
     property var api: apiClient
 
+    // Pi-hole groups, shared by the adlist and domain editors
+    readonly property var defaultGroups: [{ id: 0, name: "Default", enabled: true }]
+    property var groups: defaultGroups
+
     Settings {
         id: store
         category: "pihole-manager"
@@ -56,9 +60,11 @@ MainView {
 
     function applyServer() {
         apiClient.configure(hasServer ? currentServer.url : "", hasServer ? currentServer.password : "");
+        groups = defaultGroups;
         dashboardView.reset();
         queriesView.reset();
         domainsView.reset();
+        statsView.reset();
         settingsView.reset();
         refreshCurrent();
     }
@@ -106,7 +112,8 @@ MainView {
         case 0: dashboardView.refresh(); break;
         case 1: queriesView.refresh(); break;
         case 2: domainsView.refresh(); break;
-        case 3: settingsView.refresh(); break;
+        case 3: statsView.refresh(); break;
+        case 4: settingsView.refresh(); break;
         }
     }
 
@@ -151,7 +158,15 @@ MainView {
         });
     }
 
-    // Offered when tapping a domain in the query log or a top list.
+    function openQueryFilterDialog(filters, suggestions) {
+        return PopupUtils.open(queryFilterDialog, root, { filters: filters, suggestions: suggestions });
+    }
+
+    function openQueryDetail(query) {
+        return PopupUtils.open(queryDetailDialog, root, { app: root, query: query });
+    }
+
+    // Offered when tapping a domain in a top list.
     function domainActions(domain) {
         PopupUtils.open(domainActionDialog, root, { domain: domain });
     }
@@ -160,23 +175,47 @@ MainView {
         var body = { domain: domain, comment: comment || i18n.tr("Added from Pi-hole Manager"), enabled: true };
         apiClient.call("POST", "/domains/" + type + "/" + kind, body, function(err, data) {
             if (err) { toast(err.message, true); return; }
-            var errors = (data && data.processed && data.processed.errors) ? data.processed.errors : [];
-            if (errors.length > 0) {
-                toast(errors[0].error || i18n.tr("Pi-hole rejected that entry"), true);
-                return;
-            }
+            var problem = processedError(data);
+            if (problem !== "") { toast(problem, true); return; }
             toast(type === "deny" ? i18n.tr("Blocked %1").arg(domain) : i18n.tr("Allowed %1").arg(domain), false);
             if (sections.selectedIndex === 2) domainsView.refresh();
         });
     }
 
+    // First error Pi-hole reported in a create/update response ("" when there was none).
+    function processedError(data) {
+        var errors = (data && data.processed && data.processed.errors) ? data.processed.errors : [];
+        if (errors.length === 0) return "";
+        return errors[0].error || i18n.tr("Pi-hole rejected that entry");
+    }
+
+    function refreshGroups() {
+        if (!hasServer) return;
+        apiClient.call("GET", "/groups", null, function(err, data) {
+            if (!err && data && data.groups && data.groups.length > 0) groups = data.groups;
+        });
+    }
+
+    function openDomainEditDialog(item, onSubmitted) {
+        var d = PopupUtils.open(domainEditDialog, root, { item: item, groups: groups });
+        d.submitted.connect(onSubmitted);
+        return d;
+    }
+
+    function openAdlistDialog(props, onSubmitted) {
+        var d = PopupUtils.open(adlistDialog, root, props || {});
+        d.submitted.connect(onSubmitted);
+        return d;
+    }
+
     // POST an action endpoint (gravity, restart DNS, …) with a modal spinner.
-    function runAction(busyLabel, path, doneText, timeoutMs) {
+    function runAction(busyLabel, path, doneText, timeoutMs, onDone) {
         busyText = busyLabel;
         apiClient.call("POST", path, null, function(err) {
             busyText = "";
             if (err) toast(err.message, true);
             else toast(doneText, false);
+            if (onDone) onDone(err);
         }, { raw: true, timeout: timeoutMs });
     }
 
@@ -184,6 +223,10 @@ MainView {
     Component { id: confirmDialog; ConfirmDialog {} }
     Component { id: disableDialog; DisableDialog {} }
     Component { id: addDomainDialog; AddDomainDialog {} }
+    Component { id: adlistDialog; AdlistDialog {} }
+    Component { id: domainEditDialog; DomainEditDialog {} }
+    Component { id: queryDetailDialog; QueryDetailDialog {} }
+    Component { id: queryFilterDialog; QueryFilterDialog {} }
 
     Component {
         id: domainActionDialog
@@ -221,7 +264,7 @@ MainView {
             trailingActionBar.actions: [
                 Action {
                     iconName: "add"
-                    text: i18n.tr("Add domain")
+                    text: domainsView.listType === "adlists" ? i18n.tr("Add adlist") : i18n.tr("Add domain")
                     visible: sections.selectedIndex === 2 && root.hasServer
                     onTriggered: domainsView.addDomain()
                 },
@@ -238,10 +281,10 @@ MainView {
                 objectName: "sections"
                 anchors {
                     left: parent.left
-                    leftMargin: units.gu(2)
                     bottom: parent.bottom
                 }
-                model: [i18n.tr("Dashboard"), i18n.tr("Queries"), i18n.tr("Domains"), i18n.tr("More")]
+                width: parent.width
+                model: [i18n.tr("Home"), i18n.tr("Queries"), i18n.tr("Lists"), i18n.tr("Stats"), i18n.tr("More")]
             }
         }
 
@@ -278,19 +321,27 @@ MainView {
                 active: sections.selectedIndex === 2
                 visible: active
             }
+            StatsView {
+                id: statsView
+                objectName: "statsView"
+                anchors.fill: parent
+                app: root
+                active: sections.selectedIndex === 3
+                visible: active
+            }
             SettingsView {
                 id: settingsView
                 objectName: "settingsView"
                 anchors.fill: parent
                 app: root
-                active: sections.selectedIndex === 3
+                active: sections.selectedIndex === 4
                 visible: active
             }
 
             // first-run screen
             Rectangle {
                 anchors.fill: parent
-                visible: !root.hasServer && sections.selectedIndex !== 3
+                visible: !root.hasServer && sections.selectedIndex !== 4
                 color: theme.palette.normal.background
 
                 Column {

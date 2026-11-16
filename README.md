@@ -4,13 +4,19 @@ A native (pure QML) app to monitor and control a **Pi-hole v6** from Ubuntu Touc
 
 ## Features
 
-- **Dashboard** – blocking on/off with timed disable (30 s, 5 min, 30 min, 1 h, custom, indefinite) and a live
+- **Home** – blocking on/off with timed disable (30 s, 5 min, 30 min, 1 h, custom, indefinite) and a live
   countdown, headline stats, 24 h activity chart (tap/drag the bars for numbers), top blocked / permitted
   domains, top clients. Pull to refresh, plus configurable auto-refresh.
-- **Queries** – live query log with All / Blocked / Allowed filter and search (domain or client). Tap any row
-  to block or allow that domain. "Load more" fetches older entries.
-- **Domains** – view the deny/allow lists (exact + regex), add entries (exact or regex, with comment),
-  swipe a row right to remove it.
+- **Queries** – live query log with All / Blocked / Allowed buttons and search (domain or client). A
+  **Filters** button narrows the whole log on the Pi-hole itself by status, query type, client, upstream,
+  reply type or DNSSEC result. Tap a row for the **query details** (reply time, upstream, DNSSEC, which
+  blocklist or rule caught it) with one-tap block / allow. "Load more" fetches older entries.
+- **Lists** – *Blocked* and *Allowed* show your deny/allow entries (exact + regex): add, tap to edit
+  (enabled, comment, groups), swipe a row right to remove. *Adlists* manages the blocklists / allowlists that
+  feed gravity: add, enable/disable with a switch, edit, delete, spot lists that failed to download, and
+  update gravity.
+- **Stats** – queries per second, share answered from cache / forwarded, query types, upstream servers (with
+  average reply time) and reply types.
 - **More** – multiple Pi-holes (switch between them), auto-refresh interval, update gravity, restart DNS,
   flush the query log, Pi-hole version info.
 
@@ -55,17 +61,17 @@ Notes:
 ```
 qml/Main.qml            window, header tabs, server management, shared dialogs/actions
 qml/Api.qml             Pi-hole v6 REST client (login, SID header, retry on 401, timeouts)
-qml/DashboardView.qml   dashboard tab          qml/QueriesView.qml   query log tab
-qml/DomainsView.qml     allow/deny lists       qml/SettingsView.qml  "More" tab
-qml/*Dialog.qml, StatTile, TopList, ActivityChart, Toast, Format.js   building blocks
+qml/DashboardView.qml   "Home" tab             qml/QueriesView.qml   query log + filters
+qml/DomainsView.qml     "Lists" tab            qml/AdlistsView.qml   adlists (inside Lists)
+qml/StatsView.qml       "Stats" tab            qml/SettingsView.qml  "More" tab
+qml/*Dialog.qml, GroupPicker, StatTile, TopList, ActivityChart, Toast, Format.js   building blocks
 tests/                  headless tests: mock Pi-hole server + QML harness (see below)
 ```
 
 ## Tests
 
 `tests/` holds a mock Pi-hole v6 server and a QML harness that drives the real app code against it
-(login, concurrent calls sharing one login, session expiry, blocking toggle, query filters, domain
-add/remove incl. URL-encoding, error cases, timeouts, password-less Pi-hole, v5 detection).
+(login, concurrent calls sharing one login, session expiry, blocking toggle, query filters incl. the\nserver-side ones, query details, domain and adlist add/edit/remove incl. URL-encoding, the stats tab, error\ncases, timeouts, password-less Pi-hole, v5 detection).
 It uses PySide6 with small stand-ins for the Lomiri components, so it checks logic and bindings, not the
 Lomiri look.
 
@@ -86,3 +92,15 @@ sudo apt install qmlscene qml-module-lomiri-components qml-module-qt-labs-settin
 ./tests/smoke_lomiri.sh
 ```
 
+## Acknowledgements
+
+Pi-hole Manager was inspired and influenced by [pi-hole-client](https://github.com/tsutsu3/pi-hole-client)
+by tsutsu3, the Android app that was the daily driver on the phone this one replaces. Its feature set was the
+yardstick for deciding what a good Pi-hole client should do (adlist management, editing list entries, the
+query detail screen, richer query filters, a statistics screen). pi-hole-client is itself based on
+[DroidHole](https://github.com/JGeek00/droid-hole) by JGeek00, so credit goes there too.
+
+This is an independent implementation for Ubuntu Touch: pure QML against the Pi-hole v6 REST API. No source
+code, assets or translations were copied from either project. pi-hole-client is licensed under Apache 2.0.
+
+Pi-hole is a trademark of Pi-hole LLC; this app is not affiliated with or endorsed by the Pi-hole project.

@@ -37,6 +37,17 @@ Item {
         return s;
     }
 
+    // {a: 1, b: "x y", c: ""} -> "?a=1&b=x%20y"   (empty / null values are skipped)
+    function qs(params) {
+        var parts = [];
+        for (var k in params) {
+            var v = params[k];
+            if (v === undefined || v === null || v === "") continue;
+            parts.push(encodeURIComponent(k) + "=" + encodeURIComponent(v));
+        }
+        return parts.length > 0 ? "?" + parts.join("&") : "";
+    }
+
     function configure(url, pass) {
         logout();
         baseUrl = normalizeUrl(url);

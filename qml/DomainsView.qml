@@ -2,7 +2,7 @@ import QtQuick 2.12
 import Lomiri.Components 1.3
 import "Format.js" as Fmt
 
-// Allow / deny list management.
+// Allow / deny list management, plus the adlists that feed gravity.
 Item {
     id: view
 
@@ -12,7 +12,7 @@ Item {
     property var domains: []
     property bool loading: false
     property string errorText: ""
-    property string listType: "deny"        // deny | allow
+    property string listType: "deny"        // deny | allow | adlists
 
     readonly property var shown: ofType(domains, listType)
 
@@ -27,10 +27,12 @@ Item {
     function reset() {
         domains = [];
         errorText = "";
+        adlistsView.reset();
     }
 
     function refresh() {
         if (!app || !app.hasServer) return;
+        if (listType === "adlists") { adlistsView.refresh(); return; }
         loading = true;
         errorText = "";
         app.api.call("GET", "/domains", null, function(err, data) {
@@ -38,15 +40,45 @@ Item {
             if (err) { errorText = err.message; return; }
             domains = data.domains || [];
         });
+        app.refreshGroups();
+    }
+
+    function entryPath(item) {
+        return "/domains/" + item.type + "/" + item.kind + "/" + encodeURIComponent(item.domain);
+    }
+
+    // Pi-hole's PUT replaces the whole record, so always send every editable field.
+    function update(item, changes) {
+        var body = {
+            type: item.type,
+            kind: item.kind,
+            comment: item.comment === undefined ? null : item.comment,
+            groups: item.groups || [0],
+            enabled: item.enabled !== false
+        };
+        for (var k in changes) body[k] = changes[k];
+        app.api.call("PUT", entryPath(item), body, function(err, data) {
+            if (err) { app.toast(err.message, true); refresh(); return; }
+            var problem = app.processedError(data);
+            if (problem !== "") { app.toast(problem, true); refresh(); return; }
+            app.toast(i18n.tr("Saved"), false);
+            refresh();
+        });
+    }
+
+    function editDomain(item) {
+        app.openDomainEditDialog(item, function(result) {
+            view.update(item, { comment: result.comment || null, enabled: result.enabled, groups: result.groups });
+        });
     }
 
     function addDomain() {
+        if (listType === "adlists") { adlistsView.addAdlist(); return; }
         app.openAddDomain({ listType: view.listType });
     }
 
     function removeDomain(item) {
-        var path = "/domains/" + item.type + "/" + item.kind + "/" + encodeURIComponent(item.domain);
-        app.api.call("DELETE", path, null, function(err) {
+        app.api.call("DELETE", entryPath(item), null, function(err) {
             if (err) { app.toast(err.message, true); return; }
             app.toast(i18n.tr("Removed %1").arg(item.domain), false);
             refresh();
@@ -58,8 +90,11 @@ Item {
     Sections {
         id: typeSections
         anchors { top: parent.top; left: parent.left; right: parent.right; margins: units.gu(1) }
-        model: [i18n.tr("Blocked"), i18n.tr("Allowed")]
-        onSelectedIndexChanged: view.listType = (selectedIndex === 0 ? "deny" : "allow")
+        model: [i18n.tr("Blocked"), i18n.tr("Allowed"), i18n.tr("Adlists")]
+        onSelectedIndexChanged: {
+            view.listType = (selectedIndex === 0 ? "deny" : (selectedIndex === 1 ? "allow" : "adlists"));
+            if (view.active) view.refresh();
+        }
     }
 
     ListView {
@@ -72,6 +107,7 @@ Item {
             bottom: parent.bottom
         }
         clip: true
+        visible: view.listType !== "adlists"
         model: view.shown
 
         PullToRefresh {
@@ -104,6 +140,8 @@ Item {
         delegate: ListItem {
             id: row
             height: units.gu(7)
+
+            onClicked: view.editDomain(modelData)
 
             leadingActions: ListItemActions {
                 actions: [
@@ -152,7 +190,7 @@ Item {
 
     Label {
         anchors.centerIn: parent
-        visible: !view.loading && view.errorText === "" && view.shown.length === 0
+        visible: view.listType !== "adlists" && !view.loading && view.errorText === "" && view.shown.length === 0
         horizontalAlignment: Text.AlignHCenter
         width: parent.width - units.gu(6)
         wrapMode: Text.WordWrap
@@ -166,5 +204,19 @@ Item {
         anchors.centerIn: parent
         running: view.loading && view.domains.length === 0
         visible: running
+    }
+
+    AdlistsView {
+        id: adlistsView
+        objectName: "adlistsView"
+        anchors {
+            top: typeSections.bottom
+            topMargin: units.gu(1)
+            left: parent.left
+            right: parent.right
+            bottom: parent.bottom
+        }
+        app: view.app
+        visible: view.listType === "adlists"
     }
 }

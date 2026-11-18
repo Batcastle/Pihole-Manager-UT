@@ -4,7 +4,7 @@
     "description": "Monitor and control your Pi-hole from Ubuntu Touch",
     "architecture": "@CLICK_ARCH@",
     "framework": "@CLICK_FRAMEWORK@",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "maintainer": "Thomas Castleman <batcastle@draugeros.org>",
     "hooks": {
         "piholemanager": {

@@ -237,7 +237,7 @@ Item {
                 wrapMode: Text.WordWrap
                 textSize: Label.Small
                 color: theme.palette.normal.backgroundSecondaryText
-                text: i18n.tr("Pi-hole Manager 0.1.0. Works with Pi-hole v6. Passwords are stored on this device, in this app's private storage. If your Pi-hole uses two-factor authentication, create an app password in its web interface and use that.")
+                text: i18n.tr("Pi-hole Manager 0.2.0. Works with Pi-hole v6. Passwords are stored on this device, in this app's private storage. If your Pi-hole uses two-factor authentication, create an app password in its web interface and use that.")
             }
         }
     }

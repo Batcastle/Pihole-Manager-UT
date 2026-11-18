@@ -14,6 +14,12 @@ Item {
 
     property int failures: 0
     property int checks: 0
+    function rowOf2(secs, title, label) {
+        for (var i = 0; i < secs.length; i++) if (secs[i].title === title)
+            for (var j = 0; j < secs[i].rows.length; j++) if (secs[i].rows[j].label === label) return secs[i].rows[j].value;
+        return undefined;
+    }
+
 
     function check(name, cond, extra) {
         checks++;
@@ -297,6 +303,30 @@ Item {
                     var lone = Fmt.clientSeries({ history: [{ timestamp: 1, data: { "10.0.0.1": 3, "10.0.0.2": 1 } }], clients: {} }, 5, "Other");
                     check("client chart: works without the clients summary", lone.series.length === 2 && lone.series[0].key === "10.0.0.1" && lone.slots[0].total === 4, lone);
                     check("client chart: empty response is harmless", Fmt.clientSeries(null, 5, "Other").slots.length === 0);
+                });
+                waitFor(function() { return stv.serverSections.length === 3; }, 3000, function(okS) {
+                    var secs = stv.serverSections;
+                    function rowOf(title, label) {
+                        for (var i = 0; i < secs.length; i++) if (secs[i].title === title)
+                            for (var j = 0; j < secs[i].rows.length; j++) if (secs[i].rows[j].label === label) return secs[i].rows[j].value;
+                        return undefined;
+                    }
+                    check("server info: host, system and FTL sections", okS && secs.map(function(x) { return x.title; }).join("|") === "Host|System load|Pi-hole FTL", secs.map(function(x) { return x.title; }));
+                    check("server info: model and OS", rowOf("Host", "Model") === "Raspberry Pi 4 Model B Rev 1.5" && rowOf("Host", "System") === "Linux 6.6.31+rpt-rpi-v8", [rowOf("Host", "Model"), rowOf("Host", "System")]);
+                    check("server info: null DMI fields are left out", rowOf("Host", "Hostname") === "pihole" && secs[0].rows.length === 4, secs[0].rows.length);
+                    check("server info: uptime / load / temperature", rowOf("System load", "Uptime") === "3d 3h" && rowOf("System load", "Load average") === "0.12  0.20  0.31" && rowOf("System load", "CPU temperature") === "48.3°C", [rowOf("System load", "Uptime"), rowOf("System load", "Load average"), rowOf("System load", "CPU temperature")]);
+                    check("server info: memory in GB, no swap row when swap is off", rowOf("System load", "Memory") === "1.4 GB / 3.8 GB  (37.6%)" && rowOf("System load", "Swap") === undefined, rowOf("System load", "Memory"));
+                    check("server info: FTL numbers", rowOf("Pi-hole FTL", "FTL uptime") === "1d 1h" && rowOf("Pi-hole FTL", "Domains on blocklists") === "123,456" && rowOf("Pi-hole FTL", "Clients") === "5 active · 11 known", [rowOf("Pi-hole FTL", "FTL uptime"), rowOf("Pi-hole FTL", "Domains on blocklists"), rowOf("Pi-hole FTL", "Clients")]);
+                    var partial = Fmt.serverInfo(null, null, null, null, function(x) { return x; });
+                    check("server info: nothing reported -> no sections", partial.length === 0);
+                    var fahr = Fmt.serverInfo(null, { system: {} }, null, { sensors: { cpu_temp: 100, unit: "F" } }, function(x) { return x; });
+                    check("server info: Fahrenheit unit respected", fahr.length === 1 && fahr[0].rows[0].value === "100.0°F", fahr);
+                    T.setSensorsFail(true);
+                    stv.refresh();
+                    waitFor(function() { return rowOf2(stv.serverSections, "System load", "CPU temperature") === undefined && stv.serverSections.length === 3; }, 3000, function(okF) {
+                        check("server info: a failing /info/sensors only drops the temperature row", okF && rowOf2(stv.serverSections, "System load", "Uptime") === "3d 3h");
+                        T.setSensorsFail(false);
+                    });
                 });
                 h.snapshot("stats");
                 next();

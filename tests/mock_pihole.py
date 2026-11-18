@@ -10,6 +10,7 @@ class State:
         self.sessions = set()
         self.logins = 0
         self.blocking = "enabled"
+        self.sensors_fail = False
         self.timer = None
         self.log = []               # (method, path)
         self.domains = [
@@ -213,6 +214,23 @@ def make_server(state, port=0):
                     {"ip": "1.1.1.1", "name": "one.one.one.one", "port": 53, "count": 300, "statistics": {"response": 0.0254856, "variance": 0.02}},
                     {"ip": "127.0.0.1", "name": None, "port": 5335, "count": 100, "statistics": {"response": 1.5, "variance": 0.1}}],
                     "forwarded_queries": 400, "total_queries": 1000})
+            if path == "/api/info/host":
+                return self._send(200, {"host": {"uname": {"domainname": "(none)", "machine": "aarch64", "nodename": "pihole", "release": "6.6.31+rpt-rpi-v8", "sysname": "Linux", "version": "#1 SMP"},
+                                         "model": "Raspberry Pi 4 Model B Rev 1.5", "dmi": {"bios": {"vendor": None}, "board": {"name": None}, "product": {"name": None}}}, "took": 0.0})
+            if path == "/api/info/system":
+                return self._send(200, {"system": {"uptime": 273000, "memory": {"ram": {"total": 3984000, "free": 1200000, "used": 1500000, "available": 2300000, "%used": 37.6},
+                                                                                 "swap": {"total": 0, "used": 0, "free": 0, "%used": 0}},
+                                                   "procs": 142, "cpu": {"nprocs": 4, "%cpu": 7.25, "load": {"raw": [0.12, 0.2, 0.31], "percent": [3, 5, 7.75]}},
+                                                   "ftl": {"%mem": 1.2, "%cpu": 0.3}}, "took": 0.0})
+            if path == "/api/info/ftl":
+                return self._send(200, {"ftl": {"database": {"gravity": 123456, "groups": 3, "lists": 4, "clients": 7,
+                                                           "domains": {"allowed": {"total": 10, "enabled": 9}, "denied": {"total": 25, "enabled": 25}}},
+                                              "privacy_level": 0, "query_frequency": 1.4, "clients": {"total": 11, "active": 5}, "pid": 811, "uptime": 90061000,
+                                              "%mem": 1.2, "%cpu": 0.3, "allow_destructive": True}, "took": 0.0})
+            if path == "/api/info/sensors":
+                if state.sensors_fail:
+                    return self._send(500, {"error": {"key": "no_sensors", "message": "no sensors", "hint": None}})
+                return self._send(200, {"sensors": {"list": [], "cpu_temp": 48.3, "hot_limit": 60, "unit": "C"}, "took": 0.0})
             if path == "/api/info/version":
                 v = lambda s: {"local": {"version": s}}
                 return self._send(200, {"version": {"core": v("v6.1"), "web": v("v6.1"), "ftl": v("v6.1.2")}})

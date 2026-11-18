@@ -222,3 +222,79 @@ function clientSeries(resp, topN, otherLabel) {
     });
     return { series: series, slots: slots };
 }
+
+// kibibytes -> "9.8 GB" (the Pi-hole API reports memory in KiB)
+function kib(n) {
+    if (n === null || n === undefined || isNaN(n)) return "–";
+    var units = ["KB", "MB", "GB", "TB"], v = Number(n), i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return (i === 0 ? Math.round(v) : v.toFixed(1)) + " " + units[i];
+}
+
+// seconds -> "3d 4h", "4h 12m", "7m"
+function duration(totalSeconds) {
+    if (totalSeconds === null || totalSeconds === undefined || isNaN(totalSeconds)) return "–";
+    var s = Math.max(0, Math.floor(totalSeconds));
+    var d = Math.floor(s / 86400), h = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
+    if (d > 0) return d + "d " + h + "h";
+    if (h > 0) return h + "h " + m + "m";
+    return m + "m";
+}
+
+function temperature(value, unit) {
+    if (value === null || value === undefined || isNaN(value)) return "–";
+    var u = unit === "F" ? "°F" : unit === "K" ? " K" : "°C";
+    return Number(value).toFixed(1) + u;
+}
+
+// Turns the four /info/* responses into [{ title, rows: [{ label, value }] }].
+// Anything the server did not report (many fields are null on some hardware) is left out.
+// `t` is the translation function (i18n.tr) because this file cannot use i18n itself.
+function serverInfo(host, system, ftl, sensors, t) {
+    var sections = [];
+    function add(title, rows) {
+        rows = rows.filter(function(r) { return r.value !== null && r.value !== undefined && r.value !== "" && r.value !== "–"; });
+        if (rows.length > 0) sections.push({ title: title, rows: rows });
+    }
+    function row(label, value) { return { label: label, value: value }; }
+
+    var h = (host && host.host) || {}, u = h.uname || {}, dmi = h.dmi || {};
+    var board = dmi.board || {}, product = dmi.product || {};
+    add(t("Host"), [
+        row(t("Hostname"), u.nodename),
+        row(t("Model"), h.model || product.name || board.name),
+        row(t("System"), u.sysname && u.release ? u.sysname + " " + u.release : u.sysname),
+        row(t("Architecture"), u.machine)
+    ]);
+
+    var s = (system && system.system) || {};
+    var ram = (s.memory && s.memory.ram) || {}, swap = (s.memory && s.memory.swap) || {};
+    var cpu = s.cpu || {}, load = (cpu.load && cpu.load.raw) || [];
+    var temp = null, unit = "C";
+    if (sensors && sensors.sensors) { temp = sensors.sensors.cpu_temp; unit = sensors.sensors.unit || "C"; }
+    var hasRam = ram.total !== undefined && ram.total !== null;
+    var hasSwap = swap.total !== undefined && swap.total !== null && swap.total > 0;
+    add(t("System load"), [
+        row(t("Uptime"), s.uptime !== undefined ? duration(s.uptime) : null),
+        row(t("CPU usage"), cpu["%cpu"] !== undefined ? pct(cpu["%cpu"]) : null),
+        row(t("Load average"), load.length >= 3 ? load.slice(0, 3).map(function(x) { return Number(x).toFixed(2); }).join("  ") : null),
+        row(t("CPU temperature"), temp !== null && temp !== undefined ? temperature(temp, unit) : null),
+        row(t("Memory"), hasRam ? kib(ram.used) + " / " + kib(ram.total) + "  (" + pct(ram["%used"]) + ")" : null),
+        row(t("Swap"), hasSwap ? kib(swap.used) + " / " + kib(swap.total) : null),
+        row(t("Processes"), s.procs !== undefined ? String(s.procs) : null)
+    ]);
+
+    var f = (ftl && ftl.ftl) || {}, db = f.database || {}, cl = f.clients || {};
+    var dom = db.domains || {}, allowed = dom.allowed || {}, denied = dom.denied || {};
+    add(t("Pi-hole FTL"), [
+        row(t("FTL uptime"), f.uptime !== undefined ? duration(f.uptime / 1000) : null),
+        row(t("Process ID"), f.pid !== undefined ? String(f.pid) : null),
+        row(t("Privacy level"), f.privacy_level !== undefined ? String(f.privacy_level) : null),
+        row(t("Clients"), cl.total !== undefined ? num(cl.active || 0) + " " + t("active") + " · " + num(cl.total) + " " + t("known") : null),
+        row(t("Domains on blocklists"), db.gravity !== undefined ? num(db.gravity) : null),
+        row(t("Adlists"), db.lists !== undefined ? num(db.lists) : null),
+        row(t("Allowed / denied domains"), allowed.total !== undefined && denied.total !== undefined ? num(allowed.total) + " / " + num(denied.total) : null),
+        row(t("Groups"), db.groups !== undefined ? num(db.groups) : null)
+    ]);
+    return sections;
+}

@@ -18,6 +18,8 @@ Item {
     property var upstreams: []          // [{ name, count }]
     property var replies: []            // [{ name, count }]
     property var clientHistory: ({ series: [], slots: [] })
+    property var serverSections: []     // [{ title, rows: [{ label, value }] }]
+    property var _infoParts: ({})
 
     readonly property real totalQueries: summary ? summary.queries.total : 0
     readonly property real forwardedTotal: {
@@ -32,6 +34,8 @@ Item {
         upstreams = [];
         replies = [];
         clientHistory = ({ series: [], slots: [] });
+        serverSections = [];
+        _infoParts = ({});
         errorText = "";
     }
 
@@ -69,9 +73,21 @@ Item {
         });
     }
 
+    // The four /info/* calls are independent and some fail on odd hardware (sensors especially),
+    // so each one is optional: whatever arrives is shown, whatever fails is left out.
+    function _info(name) {
+        app.api.call("GET", "/info/" + name, null, function(err, data) {
+            var parts = _infoParts;
+            parts[name] = err ? null : data;
+            _infoParts = parts;
+            serverSections = Fmt.serverInfo(parts.host, parts.system, parts.ftl, parts.sensors, i18n.tr);
+        });
+    }
+
     function refresh() {
         if (!app || !app.hasServer) return;
         errorText = "";
+        ["host", "system", "ftl", "sensors"].forEach(_info);
         _get("/stats/summary", function(d) {
             summary = d;
             replies = mapToItems(d && d.queries ? d.queries.replies : null, Fmt.replyLabel);
@@ -194,6 +210,15 @@ Item {
                 nameKey: "name"
                 percentOf: view.totalQueries
                 barColor: theme.palette.normal.negative
+            }
+
+            Repeater {
+                model: view.serverSections
+                delegate: InfoCard {
+                    width: col.width
+                    title: modelData.title
+                    rows: modelData.rows
+                }
             }
         }
     }

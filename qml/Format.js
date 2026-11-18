@@ -169,3 +169,56 @@ function queryDetails(q) {
         add("ede", q.ede.text ? q.ede.text + " (" + q.ede.code + ")" : q.ede.code);
     return rows;
 }
+
+// Colours for the per-client chart (+ grey for "Other"); chosen to stay apart for common colour-vision types.
+var CLIENT_COLORS = ["#3b82f6", "#f59e0b", "#14b8a6", "#a855f7", "#ec4899"];
+var OTHER_COLOR = "#94a3b8";
+
+// /history/clients response -> { series: [{ key, name, total, color }], slots: [{ timestamp, total, values: [n per series] }] }
+// The busiest `topN` clients get their own series; everything else is folded into a final "Other" series.
+function clientSeries(resp, topN, otherLabel) {
+    var clients = (resp && resp.clients) || {};
+    var history = (resp && resp.history) || [];
+    var totals = {};
+    var key;
+    for (key in clients) totals[key] = clients[key].total || 0;
+    // clients that only appear in the history (no summary entry) still count
+    for (var h = 0; h < history.length; h++)
+        for (key in (history[h].data || {}))
+            if (totals[key] === undefined) totals[key] = 0;
+
+    var keys = Object.keys(totals);
+    // fall back to summing the history when the summary totals are missing
+    var haveTotals = keys.some(function(k) { return totals[k] > 0; });
+    if (!haveTotals) {
+        for (var i = 0; i < history.length; i++)
+            for (key in (history[i].data || {})) totals[key] += history[i].data[key];
+    }
+    keys.sort(function(a, b) { return totals[b] - totals[a]; });
+
+    var top = keys.slice(0, topN), rest = keys.slice(topN);
+    var series = top.map(function(k, idx) {
+        var c = clients[k] || {};
+        return { key: k, name: c.name || k || "?", total: totals[k], color: CLIENT_COLORS[idx % CLIENT_COLORS.length] };
+    });
+    if (rest.length > 0) {
+        var restTotal = 0;
+        for (var r = 0; r < rest.length; r++) restTotal += totals[rest[r]];
+        series.push({ key: "", name: otherLabel || "Other", total: restTotal, color: OTHER_COLOR });
+    }
+
+    var slots = history.map(function(slot) {
+        var data = slot.data || {};
+        var values = top.map(function(k) { return data[k] || 0; });
+        var sum = 0, n;
+        for (n = 0; n < values.length; n++) sum += values[n];
+        if (rest.length > 0) {
+            var other = 0;
+            for (var m = 0; m < rest.length; m++) other += data[rest[m]] || 0;
+            values.push(other);
+            sum += other;
+        }
+        return { timestamp: slot.timestamp, total: sum, values: values };
+    });
+    return { series: series, slots: slots };
+}

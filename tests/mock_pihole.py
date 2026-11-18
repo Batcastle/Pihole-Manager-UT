@@ -195,6 +195,16 @@ def make_server(state, port=0):
                     if k in body:
                         found[0][k] = body[k]
                 return self._send(200, {"lists": [found[0]], "processed": {"success": [{"item": addr}], "errors": []}})
+            if path == "/api/history/clients":
+                ips = ["192.168.1.%d" % n for n in range(10, 17)]
+                names = ["laptop", None, "phone", "tv", None, "printer", "nas"]
+                now = int(time.time()) // 300 * 300
+                hist = []
+                for i in range(24):
+                    hist.append({"timestamp": now - (23 - i) * 300,
+                                 "data": {ip: (7 - j) * 3 + (i + j) % 4 for j, ip in enumerate(ips)}})
+                totals = {ip: sum(h["data"][ip] for h in hist) for ip in ips}
+                return self._send(200, {"history": hist, "clients": {ip: {"name": names[j], "total": totals[ip]} for j, ip in enumerate(ips)}})
             if path == "/api/stats/query_types":
                 return self._send(200, {"types": {"A": 700, "AAAA": 200, "PTR": 50, "HTTPS": 30, "SRV": 0, "OTHER": 20}})
             if path == "/api/stats/upstreams":

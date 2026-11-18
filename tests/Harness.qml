@@ -285,6 +285,19 @@ Item {
                       stv.upstreams[0].name === "cache" && stv.upstreams[1].name === "one.one.one.one · 25 ms" && stv.upstreams[2].name === "127.0.0.1#5335 · 1.5 s", stv.upstreams);
                 check("forwardedTotal sums upstream counts", stv.forwardedTotal === 1000);
                 check("cache share of all queries", stv.pctOfTotal(stv.summary.queries.cached) === "0.5%", stv.pctOfTotal(stv.summary.queries.cached));
+                waitFor(function() { return stv.clientHistory.slots.length === 24; }, 3000, function(okC) {
+                    var ch = stv.clientHistory;
+                    check("client chart: 24 slots, top 5 clients + Other", okC && ch.series.length === 6 && ch.series[5].name === "Other" && ch.series[5].key === "", ch.series.length);
+                    check("client chart: named by hostname, else IP", ch.series[0].name === "laptop" && ch.series[1].name === "192.168.1.11" && ch.series[2].name === "phone", ch.series.map(function(x) { return x.name; }));
+                    check("client chart: busiest first", ch.series[0].total >= ch.series[1].total && ch.series[4].total >= ch.series[5].total / 2, ch.series.map(function(x) { return x.total; }));
+                    var sum = ch.series.reduce(function(a, b) { return a + b.total; }, 0);
+                    var slotSum = ch.slots.reduce(function(a, b) { return a + b.total; }, 0);
+                    check("client chart: series totals match slot totals", sum === slotSum, [sum, slotSum]);
+                    check("client chart: each slot has one value per series", ch.slots.every(function(sl) { return sl.values.length === 6; }));
+                    var lone = Fmt.clientSeries({ history: [{ timestamp: 1, data: { "10.0.0.1": 3, "10.0.0.2": 1 } }], clients: {} }, 5, "Other");
+                    check("client chart: works without the clients summary", lone.series.length === 2 && lone.series[0].key === "10.0.0.1" && lone.slots[0].total === 4, lone);
+                    check("client chart: empty response is harmless", Fmt.clientSeries(null, 5, "Other").slots.length === 0);
+                });
                 h.snapshot("stats");
                 next();
             });

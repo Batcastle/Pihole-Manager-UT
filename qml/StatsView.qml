@@ -17,6 +17,7 @@ Item {
     property var queryTypes: []         // [{ name, count }]
     property var upstreams: []          // [{ name, count }]
     property var replies: []            // [{ name, count }]
+    property var clientHistory: ({ series: [], slots: [] })
 
     readonly property real totalQueries: summary ? summary.queries.total : 0
     readonly property real forwardedTotal: {
@@ -30,6 +31,7 @@ Item {
         queryTypes = [];
         upstreams = [];
         replies = [];
+        clientHistory = ({ series: [], slots: [] });
         errorText = "";
     }
 
@@ -74,6 +76,7 @@ Item {
             summary = d;
             replies = mapToItems(d && d.queries ? d.queries.replies : null, Fmt.replyLabel);
         });
+        _get("/history/clients", function(d) { clientHistory = Fmt.clientSeries(d, 5, i18n.tr("Other")); });
         _get("/stats/query_types", function(d) { queryTypes = mapToItems(d.types, null); });
         _get("/stats/upstreams", function(d) { upstreams = upstreamItems(d.upstreams); });
     }
@@ -158,6 +161,14 @@ Item {
                     value: view.summary ? view.pctOfTotal(view.summary.queries.forwarded) : "–"
                     accent: theme.palette.normal.positive
                 }
+            }
+
+            ClientChart {
+                width: parent.width
+                visible: view.clientHistory.slots.length > 0
+                title: i18n.tr("Clients over time")
+                series: view.clientHistory.series
+                slots: view.clientHistory.slots
             }
 
             TopList {

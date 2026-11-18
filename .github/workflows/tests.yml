@@ -1,0 +1,40 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  logic:
+    name: Logic tests (mock Pi-hole + QML harness)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Qt runtime libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1 libxkbcommon0 libfontconfig1 libdbus-1-3
+      - name: Install PySide6
+        run: pip install PySide6-Essentials
+      - name: Run tests
+        run: python3 tests/run_tests.py
+
+  lomiri-smoke:
+    name: Smoke test on the real Lomiri toolkit (Qt 5)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Lomiri components, qmlscene and Xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qmlscene qml-module-lomiri-components \
+            qml-module-qt-labs-settings qml-module-qtquick2 xvfb suru-icon-theme
+      - name: Launch the app headlessly
+        run: ./tests/smoke_lomiri.sh

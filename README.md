@@ -71,7 +71,9 @@ tests/                  headless tests: mock Pi-hole server + QML harness (see b
 ## Tests
 
 `tests/` holds a mock Pi-hole v6 server and a QML harness that drives the real app code against it
-(login, concurrent calls sharing one login, session expiry, blocking toggle, query filters incl. the\nserver-side ones, query details, domain and adlist add/edit/remove incl. URL-encoding, the stats tab, error\ncases, timeouts, password-less Pi-hole, v5 detection).
+(login, concurrent calls sharing one login, session expiry, blocking toggle, query filters incl. the
+server-side ones, query details, domain and adlist add/edit/remove incl. URL-encoding, the stats tab, error
+cases, timeouts, password-less Pi-hole, v5 detection).
 It uses PySide6 with small stand-ins for the Lomiri components, so it checks logic and bindings, not the
 Lomiri look.
 
@@ -79,6 +81,9 @@ Lomiri look.
 pip install PySide6-Essentials
 python3 tests/run_tests.py
 ```
+
+Both this and the real-toolkit check below run on every push and pull request via GitHub Actions
+(`.github/workflows/tests.yml`).
 
 ### Checking against the real Lomiri toolkit
 

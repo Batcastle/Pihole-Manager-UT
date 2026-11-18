@@ -382,6 +382,79 @@ Item {
                 });
             });
         },
+        // 7b. "Pi-hole update available" notice
+        function(next) {
+            function V(local, remote) { return { local: { version: local }, remote: { version: remote } }; }
+            check("version compare: numeric, not textual", Fmt.isNewer("v6.1.2", "v6.1.10") && !Fmt.isNewer("v6.1.10", "v6.1.2") && Fmt.isNewer("v6.1", "v6.1.1"));
+            check("version compare: equal / older / missing remote", !Fmt.isNewer("v6.1", "v6.1") && !Fmt.isNewer("v6.2", "v6.1.9") && !Fmt.isNewer("v6.1", null) && !Fmt.isNewer("v6.1", "v6.1.0"));
+            check("version compare: unparseable local counts as different", Fmt.isNewer("development-abc", "v6.2") && !Fmt.isNewer("development-abc", "development-abc"));
+            var plain = Fmt.updateInfo({ version: { core: V("v6.1", "v6.1"), web: V("v6.1", "v6.1"), ftl: V("v6.1.2", "v6.1.2") } });
+            check("update info: up to date", !plain.available && plain.components.length === 0 && plain.signature === "");
+            var custom = Fmt.updateInfo({ version: { core: { local: { version: "v6.1-3-gabc" }, remote: { version: null } }, web: V("v6.1", "v6.1"), ftl: V("v6.1", "v6.1") } });
+            check("update info: custom branch (no remote) is never flagged", !custom.available);
+            check("update info: garbage response is harmless", !Fmt.updateInfo(null).available && !Fmt.updateInfo({}).available);
+
+            check("no update, no dialog at startup", app.updateInfo === null && app.updateDialog === null);
+            T.setUpdateMode("updates");
+            app.checkUpdates();
+            waitFor(function() { return app.updateDialog !== null; }, 3000, function(ok1) {
+                var info = app.updateInfo || { components: [] };
+                check("update dialog opens when updates exist", ok1);
+                check("update dialog lists only outdated parts", info.components.map(function(c) { return c.key + ":" + c.local + ">" + c.remote; }).join(",") === "core:v6.1>v6.2,ftl:v6.1.2>v6.2.1", info.components);
+                check("update dialog links to the Pi-hole update docs", ok1 && app.updateDialog.info.url === "https://docs.pi-hole.net/main/update/" && !app.updateDialog.info.docker, ok1 ? app.updateDialog.info.url : "");
+                check("update dialog names the server", ok1 && app.updateDialog.serverName === app.currentServer.name);
+                check("More tab has an update row", find(app, "updateRow") !== null);
+                var sigA = info.signature;
+                // dismiss it
+                app.updateDialog.dismissed();
+                app.updateDialog.destroy();
+                waitFor(function() { return app.updateDialog === null; }, 1000, function(okGone) {
+                    check("dialog reference cleared when closed", okGone);
+                    check("dismissed update is remembered", app.updateDismissed());
+                    var n0 = T.reqCount("/info/version");
+                    app.checkUpdates();
+                    waitFor(function() { return T.reqCount("/info/version") > n0; }, 2000, function() {
+                        // give the response a moment to be handled
+                        waitFor(function() { return false; }, 300, function() {
+                            check("same updates: dialog stays away, row stays", app.updateDialog === null && app.updateInfo !== null && app.updateInfo.signature === sigA);
+                            // a newer release appears
+                            T.setUpdateMode("updates2");
+                            app.checkUpdates();
+                            waitFor(function() { return app.updateDialog !== null; }, 3000, function(ok2) {
+                                check("a newer release brings the dialog back", ok2 && app.updateInfo.signature !== sigA, app.updateInfo);
+                                app.updateDialog.destroy();
+                                waitFor(function() { return app.updateDialog === null; }, 1000, function() {
+                                    // Docker: the image is the unit of update
+                                    T.setUpdateMode("docker");
+                                    app.store_clear_for_test();
+                                    app.checkUpdates();
+                                    waitFor(function() { return app.updateDialog !== null; }, 3000, function(ok3) {
+                                        var di = ok3 ? app.updateDialog.info : { components: [] };
+                                        check("docker: image listed, links to Docker upgrade docs", ok3 && di.docker && di.components.length === 1 && di.components[0].key === "docker" && di.url === "https://docs.pi-hole.net/docker/upgrading/", di);
+                                        app.updateDialog.destroy();
+                                        waitFor(function() { return app.updateDialog === null; }, 1000, function() {
+                                            // back to current
+                                            T.setUpdateMode("none");
+                                            app.checkUpdates();
+                                            waitFor(function() { return app.updateInfo === null; }, 3000, function(ok4) {
+                                                check("up to date again: notice and row go away", ok4 && app.updateDialog === null);
+                                                T.setUpdateMode("custom");
+                                                app.checkUpdates();
+                                                waitFor(function() { return false; }, 300, function() {
+                                                    check("custom branch: no notice", app.updateInfo === null && app.updateDialog === null);
+                                                    T.setUpdateMode("none");
+                                                    next();
+                                                });
+                                            });
+                                        });
+                                    });
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        },
         // 8. removing the last server resets everything
         function(next) {
             app.removeServer(0);

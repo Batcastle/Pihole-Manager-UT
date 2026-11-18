@@ -66,6 +66,8 @@ class Bridge(QObject):
     def reqCountM(self, method, sub): return sum(1 for m, p, _ in s_v6.log if m == method and sub in p)
     @Slot(bool)
     def setSensorsFail(self, v): s_v6.sensors_fail = v
+    @Slot(str)
+    def setUpdateMode(self, m): s_v6.update_mode = m
     @Slot(str, result=str)
     def domainRec(self, name):
         for d in s_v6.domains:

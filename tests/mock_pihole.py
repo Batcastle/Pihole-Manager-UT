@@ -11,6 +11,7 @@ class State:
         self.logins = 0
         self.blocking = "enabled"
         self.sensors_fail = False
+        self.update_mode = "none"   # none | updates | updates2 | docker | custom
         self.timer = None
         self.log = []               # (method, path)
         self.domains = [
@@ -232,8 +233,21 @@ def make_server(state, port=0):
                     return self._send(500, {"error": {"key": "no_sensors", "message": "no sensors", "hint": None}})
                 return self._send(200, {"sensors": {"list": [], "cpu_temp": 48.3, "hot_limit": 60, "unit": "C"}, "took": 0.0})
             if path == "/api/info/version":
-                v = lambda s: {"local": {"version": s}}
-                return self._send(200, {"version": {"core": v("v6.1"), "web": v("v6.1"), "ftl": v("v6.1.2")}})
+                def v(local, remote="same"):
+                    if remote == "same": remote = local
+                    return {"local": {"branch": "master", "version": local, "hash": "abc"}, "remote": {"version": remote, "hash": "def"}}
+                mode = state.update_mode
+                ver = {"core": v("v6.1"), "web": v("v6.1"), "ftl": v("v6.1.2"), "docker": {"local": None, "remote": None}}
+                if mode == "updates":
+                    ver["core"] = v("v6.1", "v6.2"); ver["ftl"] = v("v6.1.2", "v6.2.1")
+                elif mode == "updates2":
+                    ver["core"] = v("v6.1", "v6.3"); ver["ftl"] = v("v6.1.2", "v6.2.1")
+                elif mode == "docker":
+                    ver["core"] = v("v6.1", "v6.2")
+                    ver["docker"] = {"local": "2025.02.0", "remote": "2025.03.1"}
+                elif mode == "custom":
+                    ver["core"] = {"local": {"branch": "my-fix", "version": "v6.1-12-gabc", "hash": "abc"}, "remote": {"version": None, "hash": None}}
+                return self._send(200, {"version": ver})
             if path == "/api/action/gravity" and method == "POST":
                 time.sleep(0.6)
                 return self._send(200, raw="[i] Neutrino emissions detected...\n[✓] Done.\n")

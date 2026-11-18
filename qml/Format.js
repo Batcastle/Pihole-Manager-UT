@@ -298,3 +298,55 @@ function serverInfo(host, system, ftl, sensors, t) {
     ]);
     return sections;
 }
+
+// ---- update check -------------------------------------------------------------
+
+var UPDATE_DOCS_URL = "https://docs.pi-hole.net/main/update/";
+var UPDATE_DOCS_DOCKER_URL = "https://docs.pi-hole.net/docker/upgrading/";
+
+// "v6.1.2" -> [6, 1, 2]; null when the string is not a plain version number
+function parseVersion(v) {
+    if (typeof v !== "string") return null;
+    var m = /^v?(\d+(?:\.\d+)*)$/.exec(v.trim());
+    return m ? m[1].split(".").map(Number) : null;
+}
+
+// true when `remote` is a newer release than `local`; when either does not look like
+// a plain version number, any difference counts (better one spurious notice than a missed update)
+function isNewer(local, remote) {
+    if (!remote) return false;
+    if (!local) return true;
+    var a = parseVersion(local), b = parseVersion(remote);
+    if (!a || !b) return String(local).trim() !== String(remote).trim();
+    for (var i = 0; i < Math.max(a.length, b.length); i++) {
+        var x = a[i] || 0, y = b[i] || 0;
+        if (y !== x) return y > x;
+    }
+    return false;
+}
+
+// /info/version response -> { available, docker, url, signature, components: [{ key, local, remote }] }
+// Components on a custom branch report no remote version and are never flagged.
+// On Docker the image is what gets upgraded (the parts are baked into it), so only the image is listed.
+function updateInfo(resp) {
+    var v = (resp && resp.version) || {};
+    var out = { available: false, docker: false, url: UPDATE_DOCS_URL, signature: "", components: [] };
+    var dockerLocal = v.docker ? v.docker.local : null;
+    if (dockerLocal) {
+        out.docker = true;
+        out.url = UPDATE_DOCS_DOCKER_URL;
+        var dRemote = v.docker.remote;
+        if (isNewer(dockerLocal, dRemote)) out.components.push({ key: "docker", local: dockerLocal, remote: dRemote });
+    } else {
+        ["core", "web", "ftl"].forEach(function(k) {
+            var c = v[k] || {};
+            var local = c.local ? c.local.version : null;
+            var remote = c.remote ? c.remote.version : null;
+            if (isNewer(local, remote)) out.components.push({ key: k, local: local || "?", remote: remote });
+        });
+    }
+    out.available = out.components.length > 0;
+    // identifies this set of updates, so dismissing it is not forgotten until something newer is released
+    out.signature = out.components.map(function(c) { return c.key + "=" + c.remote; }).join(",");
+    return out;
+}

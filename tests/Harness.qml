@@ -14,6 +14,12 @@ Item {
 
     property int failures: 0
     property int checks: 0
+    function rowOf2(secs, title, label) {
+        for (var i = 0; i < secs.length; i++) if (secs[i].title === title)
+            for (var j = 0; j < secs[i].rows.length; j++) if (secs[i].rows[j].label === label) return secs[i].rows[j].value;
+        return undefined;
+    }
+
 
     function check(name, cond, extra) {
         checks++;
@@ -285,6 +291,43 @@ Item {
                       stv.upstreams[0].name === "cache" && stv.upstreams[1].name === "one.one.one.one · 25 ms" && stv.upstreams[2].name === "127.0.0.1#5335 · 1.5 s", stv.upstreams);
                 check("forwardedTotal sums upstream counts", stv.forwardedTotal === 1000);
                 check("cache share of all queries", stv.pctOfTotal(stv.summary.queries.cached) === "0.5%", stv.pctOfTotal(stv.summary.queries.cached));
+                waitFor(function() { return stv.clientHistory.slots.length === 24; }, 3000, function(okC) {
+                    var ch = stv.clientHistory;
+                    check("client chart: 24 slots, top 5 clients + Other", okC && ch.series.length === 6 && ch.series[5].name === "Other" && ch.series[5].key === "", ch.series.length);
+                    check("client chart: named by hostname, else IP", ch.series[0].name === "laptop" && ch.series[1].name === "192.168.1.11" && ch.series[2].name === "phone", ch.series.map(function(x) { return x.name; }));
+                    check("client chart: busiest first", ch.series[0].total >= ch.series[1].total && ch.series[4].total >= ch.series[5].total / 2, ch.series.map(function(x) { return x.total; }));
+                    var sum = ch.series.reduce(function(a, b) { return a + b.total; }, 0);
+                    var slotSum = ch.slots.reduce(function(a, b) { return a + b.total; }, 0);
+                    check("client chart: series totals match slot totals", sum === slotSum, [sum, slotSum]);
+                    check("client chart: each slot has one value per series", ch.slots.every(function(sl) { return sl.values.length === 6; }));
+                    var lone = Fmt.clientSeries({ history: [{ timestamp: 1, data: { "10.0.0.1": 3, "10.0.0.2": 1 } }], clients: {} }, 5, "Other");
+                    check("client chart: works without the clients summary", lone.series.length === 2 && lone.series[0].key === "10.0.0.1" && lone.slots[0].total === 4, lone);
+                    check("client chart: empty response is harmless", Fmt.clientSeries(null, 5, "Other").slots.length === 0);
+                });
+                waitFor(function() { return stv.serverSections.length === 3; }, 3000, function(okS) {
+                    var secs = stv.serverSections;
+                    function rowOf(title, label) {
+                        for (var i = 0; i < secs.length; i++) if (secs[i].title === title)
+                            for (var j = 0; j < secs[i].rows.length; j++) if (secs[i].rows[j].label === label) return secs[i].rows[j].value;
+                        return undefined;
+                    }
+                    check("server info: host, system and FTL sections", okS && secs.map(function(x) { return x.title; }).join("|") === "Host|System load|Pi-hole FTL", secs.map(function(x) { return x.title; }));
+                    check("server info: model and OS", rowOf("Host", "Model") === "Raspberry Pi 4 Model B Rev 1.5" && rowOf("Host", "System") === "Linux 6.6.31+rpt-rpi-v8", [rowOf("Host", "Model"), rowOf("Host", "System")]);
+                    check("server info: null DMI fields are left out", rowOf("Host", "Hostname") === "pihole" && secs[0].rows.length === 4, secs[0].rows.length);
+                    check("server info: uptime / load / temperature", rowOf("System load", "Uptime") === "3d 3h" && rowOf("System load", "Load average") === "0.12  0.20  0.31" && rowOf("System load", "CPU temperature") === "48.3°C", [rowOf("System load", "Uptime"), rowOf("System load", "Load average"), rowOf("System load", "CPU temperature")]);
+                    check("server info: memory in GB, no swap row when swap is off", rowOf("System load", "Memory") === "1.4 GB / 3.8 GB  (37.6%)" && rowOf("System load", "Swap") === undefined, rowOf("System load", "Memory"));
+                    check("server info: FTL numbers", rowOf("Pi-hole FTL", "FTL uptime") === "1d 1h" && rowOf("Pi-hole FTL", "Domains on blocklists") === "123,456" && rowOf("Pi-hole FTL", "Clients") === "5 active · 11 known", [rowOf("Pi-hole FTL", "FTL uptime"), rowOf("Pi-hole FTL", "Domains on blocklists"), rowOf("Pi-hole FTL", "Clients")]);
+                    var partial = Fmt.serverInfo(null, null, null, null, function(x) { return x; });
+                    check("server info: nothing reported -> no sections", partial.length === 0);
+                    var fahr = Fmt.serverInfo(null, { system: {} }, null, { sensors: { cpu_temp: 100, unit: "F" } }, function(x) { return x; });
+                    check("server info: Fahrenheit unit respected", fahr.length === 1 && fahr[0].rows[0].value === "100.0°F", fahr);
+                    T.setSensorsFail(true);
+                    stv.refresh();
+                    waitFor(function() { return rowOf2(stv.serverSections, "System load", "CPU temperature") === undefined && stv.serverSections.length === 3; }, 3000, function(okF) {
+                        check("server info: a failing /info/sensors only drops the temperature row", okF && rowOf2(stv.serverSections, "System load", "Uptime") === "3d 3h");
+                        T.setSensorsFail(false);
+                    });
+                });
                 h.snapshot("stats");
                 next();
             });
@@ -331,6 +374,79 @@ Item {
                                     callA("GET", "/x", null, {}, function(err7) {
                                         check("no server configured", err7 && err7.key === "no_server", err7);
                                         next();
+                                    });
+                                });
+                            });
+                        });
+                    });
+                });
+            });
+        },
+        // 7b. "Pi-hole update available" notice
+        function(next) {
+            function V(local, remote) { return { local: { version: local }, remote: { version: remote } }; }
+            check("version compare: numeric, not textual", Fmt.isNewer("v6.1.2", "v6.1.10") && !Fmt.isNewer("v6.1.10", "v6.1.2") && Fmt.isNewer("v6.1", "v6.1.1"));
+            check("version compare: equal / older / missing remote", !Fmt.isNewer("v6.1", "v6.1") && !Fmt.isNewer("v6.2", "v6.1.9") && !Fmt.isNewer("v6.1", null) && !Fmt.isNewer("v6.1", "v6.1.0"));
+            check("version compare: unparseable local counts as different", Fmt.isNewer("development-abc", "v6.2") && !Fmt.isNewer("development-abc", "development-abc"));
+            var plain = Fmt.updateInfo({ version: { core: V("v6.1", "v6.1"), web: V("v6.1", "v6.1"), ftl: V("v6.1.2", "v6.1.2") } });
+            check("update info: up to date", !plain.available && plain.components.length === 0 && plain.signature === "");
+            var custom = Fmt.updateInfo({ version: { core: { local: { version: "v6.1-3-gabc" }, remote: { version: null } }, web: V("v6.1", "v6.1"), ftl: V("v6.1", "v6.1") } });
+            check("update info: custom branch (no remote) is never flagged", !custom.available);
+            check("update info: garbage response is harmless", !Fmt.updateInfo(null).available && !Fmt.updateInfo({}).available);
+
+            check("no update, no dialog at startup", app.updateInfo === null && app.updateDialog === null);
+            T.setUpdateMode("updates");
+            app.checkUpdates();
+            waitFor(function() { return app.updateDialog !== null; }, 3000, function(ok1) {
+                var info = app.updateInfo || { components: [] };
+                check("update dialog opens when updates exist", ok1);
+                check("update dialog lists only outdated parts", info.components.map(function(c) { return c.key + ":" + c.local + ">" + c.remote; }).join(",") === "core:v6.1>v6.2,ftl:v6.1.2>v6.2.1", info.components);
+                check("update dialog links to the Pi-hole update docs", ok1 && app.updateDialog.info.url === "https://docs.pi-hole.net/main/update/" && !app.updateDialog.info.docker, ok1 ? app.updateDialog.info.url : "");
+                check("update dialog names the server", ok1 && app.updateDialog.serverName === app.currentServer.name);
+                check("More tab has an update row", find(app, "updateRow") !== null);
+                var sigA = info.signature;
+                // dismiss it
+                app.updateDialog.dismissed();
+                app.updateDialog.destroy();
+                waitFor(function() { return app.updateDialog === null; }, 1000, function(okGone) {
+                    check("dialog reference cleared when closed", okGone);
+                    check("dismissed update is remembered", app.updateDismissed());
+                    var n0 = T.reqCount("/info/version");
+                    app.checkUpdates();
+                    waitFor(function() { return T.reqCount("/info/version") > n0; }, 2000, function() {
+                        // give the response a moment to be handled
+                        waitFor(function() { return false; }, 300, function() {
+                            check("same updates: dialog stays away, row stays", app.updateDialog === null && app.updateInfo !== null && app.updateInfo.signature === sigA);
+                            // a newer release appears
+                            T.setUpdateMode("updates2");
+                            app.checkUpdates();
+                            waitFor(function() { return app.updateDialog !== null; }, 3000, function(ok2) {
+                                check("a newer release brings the dialog back", ok2 && app.updateInfo.signature !== sigA, app.updateInfo);
+                                app.updateDialog.destroy();
+                                waitFor(function() { return app.updateDialog === null; }, 1000, function() {
+                                    // Docker: the image is the unit of update
+                                    T.setUpdateMode("docker");
+                                    app.store_clear_for_test();
+                                    app.checkUpdates();
+                                    waitFor(function() { return app.updateDialog !== null; }, 3000, function(ok3) {
+                                        var di = ok3 ? app.updateDialog.info : { components: [] };
+                                        check("docker: image listed, links to Docker upgrade docs", ok3 && di.docker && di.components.length === 1 && di.components[0].key === "docker" && di.url === "https://docs.pi-hole.net/docker/upgrading/", di);
+                                        app.updateDialog.destroy();
+                                        waitFor(function() { return app.updateDialog === null; }, 1000, function() {
+                                            // back to current
+                                            T.setUpdateMode("none");
+                                            app.checkUpdates();
+                                            waitFor(function() { return app.updateInfo === null; }, 3000, function(ok4) {
+                                                check("up to date again: notice and row go away", ok4 && app.updateDialog === null);
+                                                T.setUpdateMode("custom");
+                                                app.checkUpdates();
+                                                waitFor(function() { return false; }, 300, function() {
+                                                    check("custom branch: no notice", app.updateInfo === null && app.updateDialog === null);
+                                                    T.setUpdateMode("none");
+                                                    next();
+                                                });
+                                            });
+                                        });
                                     });
                                 });
                             });

@@ -15,10 +15,17 @@ A native (pure QML) app to monitor and control a **Pi-hole v6** from Ubuntu Touc
   (enabled, comment, groups), swipe a row right to remove. *Adlists* manages the blocklists / allowlists that
   feed gravity: add, enable/disable with a switch, edit, delete, spot lists that failed to download, and
   update gravity.
-- **Stats** – queries per second, share answered from cache / forwarded, query types, upstream servers (with
-  average reply time) and reply types.
+- **Stats** – queries per second, share answered from cache / forwarded, a per-client activity chart for the
+  last 24 hours (busiest clients plus "Other"; tap/drag for numbers), query types, upstream servers (with
+  average reply time) and reply types, then server info: host (model, OS, kernel), uptime, load, CPU
+  temperature, memory, and FTL details (PID, privacy level, gravity size, list and client counts).
 - **More** – multiple Pi-holes (switch between them), auto-refresh interval, update gravity, restart DNS,
   flush the query log, Pi-hole version info.
+- **Update notice** – when the Pi-hole reports that core, web interface or FTL (or the Docker image) has a
+  newer release, a dialog says so and links to the Pi-hole project's update documentation. The app cannot run
+  the update itself (the API has no endpoint for it) and never asks for SSH access. Dismissing the dialog is
+  remembered per Pi-hole until a newer release appears; the More tab keeps a permanent row with the link.
+  Custom branches (no remote version) are never flagged.
 
 ## Build & install
 
@@ -64,14 +71,17 @@ qml/Api.qml             Pi-hole v6 REST client (login, SID header, retry on 401,
 qml/DashboardView.qml   "Home" tab             qml/QueriesView.qml   query log + filters
 qml/DomainsView.qml     "Lists" tab            qml/AdlistsView.qml   adlists (inside Lists)
 qml/StatsView.qml       "Stats" tab            qml/SettingsView.qml  "More" tab
-qml/*Dialog.qml, GroupPicker, StatTile, TopList, ActivityChart, Toast, Format.js   building blocks
+qml/*Dialog.qml, GroupPicker, StatTile, TopList, InfoCard, ActivityChart, ClientChart, Toast, Format.js   building blocks
 tests/                  headless tests: mock Pi-hole server + QML harness (see below)
 ```
 
 ## Tests
 
 `tests/` holds a mock Pi-hole v6 server and a QML harness that drives the real app code against it
-(login, concurrent calls sharing one login, session expiry, blocking toggle, query filters incl. the\nserver-side ones, query details, domain and adlist add/edit/remove incl. URL-encoding, the stats tab, error\ncases, timeouts, password-less Pi-hole, v5 detection).
+(login, concurrent calls sharing one login, session expiry, blocking toggle, query filters incl. the
+server-side ones, query details, domain and adlist add/edit/remove incl. URL-encoding, the stats tab (client
+chart, server info), the update notice (version comparison, dismissal, Docker, custom branches), error
+cases, timeouts, password-less Pi-hole, v5 detection).
 It uses PySide6 with small stand-ins for the Lomiri components, so it checks logic and bindings, not the
 Lomiri look.
 
@@ -79,6 +89,9 @@ Lomiri look.
 pip install PySide6-Essentials
 python3 tests/run_tests.py
 ```
+
+Both this and the real-toolkit check below run on every push and pull request via GitHub Actions
+(`.github/workflows/tests.yml`).
 
 ### Checking against the real Lomiri toolkit
 

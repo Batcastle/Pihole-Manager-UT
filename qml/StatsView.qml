@@ -17,6 +17,9 @@ Item {
     property var queryTypes: []         // [{ name, count }]
     property var upstreams: []          // [{ name, count }]
     property var replies: []            // [{ name, count }]
+    property var clientHistory: ({ series: [], slots: [] })
+    property var serverSections: []     // [{ title, rows: [{ label, value }] }]
+    property var _infoParts: ({})
 
     readonly property real totalQueries: summary ? summary.queries.total : 0
     readonly property real forwardedTotal: {
@@ -30,6 +33,9 @@ Item {
         queryTypes = [];
         upstreams = [];
         replies = [];
+        clientHistory = ({ series: [], slots: [] });
+        serverSections = [];
+        _infoParts = ({});
         errorText = "";
     }
 
@@ -67,13 +73,26 @@ Item {
         });
     }
 
+    // The four /info/* calls are independent and some fail on odd hardware (sensors especially),
+    // so each one is optional: whatever arrives is shown, whatever fails is left out.
+    function _info(name) {
+        app.api.call("GET", "/info/" + name, null, function(err, data) {
+            var parts = _infoParts;
+            parts[name] = err ? null : data;
+            _infoParts = parts;
+            serverSections = Fmt.serverInfo(parts.host, parts.system, parts.ftl, parts.sensors, i18n.tr);
+        });
+    }
+
     function refresh() {
         if (!app || !app.hasServer) return;
         errorText = "";
+        ["host", "system", "ftl", "sensors"].forEach(_info);
         _get("/stats/summary", function(d) {
             summary = d;
             replies = mapToItems(d && d.queries ? d.queries.replies : null, Fmt.replyLabel);
         });
+        _get("/history/clients", function(d) { clientHistory = Fmt.clientSeries(d, 5, i18n.tr("Other")); });
         _get("/stats/query_types", function(d) { queryTypes = mapToItems(d.types, null); });
         _get("/stats/upstreams", function(d) { upstreams = upstreamItems(d.upstreams); });
     }
@@ -160,6 +179,14 @@ Item {
                 }
             }
 
+            ClientChart {
+                width: parent.width
+                visible: view.clientHistory.slots.length > 0
+                title: i18n.tr("Clients over time")
+                series: view.clientHistory.series
+                slots: view.clientHistory.slots
+            }
+
             TopList {
                 width: parent.width
                 title: i18n.tr("Query types")
@@ -183,6 +210,15 @@ Item {
                 nameKey: "name"
                 percentOf: view.totalQueries
                 barColor: theme.palette.normal.negative
+            }
+
+            Repeater {
+                model: view.serverSections
+                delegate: InfoCard {
+                    width: col.width
+                    title: modelData.title
+                    rows: modelData.rows
+                }
             }
         }
     }

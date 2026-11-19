@@ -10,6 +10,8 @@ class State:
         self.sessions = set()
         self.logins = 0
         self.blocking = "enabled"
+        self.sensors_fail = False
+        self.update_mode = "none"   # none | updates | updates2 | docker | custom
         self.timer = None
         self.log = []               # (method, path)
         self.domains = [
@@ -195,6 +197,16 @@ def make_server(state, port=0):
                     if k in body:
                         found[0][k] = body[k]
                 return self._send(200, {"lists": [found[0]], "processed": {"success": [{"item": addr}], "errors": []}})
+            if path == "/api/history/clients":
+                ips = ["192.168.1.%d" % n for n in range(10, 17)]
+                names = ["laptop", None, "phone", "tv", None, "printer", "nas"]
+                now = int(time.time()) // 300 * 300
+                hist = []
+                for i in range(24):
+                    hist.append({"timestamp": now - (23 - i) * 300,
+                                 "data": {ip: (7 - j) * 3 + (i + j) % 4 for j, ip in enumerate(ips)}})
+                totals = {ip: sum(h["data"][ip] for h in hist) for ip in ips}
+                return self._send(200, {"history": hist, "clients": {ip: {"name": names[j], "total": totals[ip]} for j, ip in enumerate(ips)}})
             if path == "/api/stats/query_types":
                 return self._send(200, {"types": {"A": 700, "AAAA": 200, "PTR": 50, "HTTPS": 30, "SRV": 0, "OTHER": 20}})
             if path == "/api/stats/upstreams":
@@ -203,9 +215,39 @@ def make_server(state, port=0):
                     {"ip": "1.1.1.1", "name": "one.one.one.one", "port": 53, "count": 300, "statistics": {"response": 0.0254856, "variance": 0.02}},
                     {"ip": "127.0.0.1", "name": None, "port": 5335, "count": 100, "statistics": {"response": 1.5, "variance": 0.1}}],
                     "forwarded_queries": 400, "total_queries": 1000})
+            if path == "/api/info/host":
+                return self._send(200, {"host": {"uname": {"domainname": "(none)", "machine": "aarch64", "nodename": "pihole", "release": "6.6.31+rpt-rpi-v8", "sysname": "Linux", "version": "#1 SMP"},
+                                         "model": "Raspberry Pi 4 Model B Rev 1.5", "dmi": {"bios": {"vendor": None}, "board": {"name": None}, "product": {"name": None}}}, "took": 0.0})
+            if path == "/api/info/system":
+                return self._send(200, {"system": {"uptime": 273000, "memory": {"ram": {"total": 3984000, "free": 1200000, "used": 1500000, "available": 2300000, "%used": 37.6},
+                                                                                 "swap": {"total": 0, "used": 0, "free": 0, "%used": 0}},
+                                                   "procs": 142, "cpu": {"nprocs": 4, "%cpu": 7.25, "load": {"raw": [0.12, 0.2, 0.31], "percent": [3, 5, 7.75]}},
+                                                   "ftl": {"%mem": 1.2, "%cpu": 0.3}}, "took": 0.0})
+            if path == "/api/info/ftl":
+                return self._send(200, {"ftl": {"database": {"gravity": 123456, "groups": 3, "lists": 4, "clients": 7,
+                                                           "domains": {"allowed": {"total": 10, "enabled": 9}, "denied": {"total": 25, "enabled": 25}}},
+                                              "privacy_level": 0, "query_frequency": 1.4, "clients": {"total": 11, "active": 5}, "pid": 811, "uptime": 90061000,
+                                              "%mem": 1.2, "%cpu": 0.3, "allow_destructive": True}, "took": 0.0})
+            if path == "/api/info/sensors":
+                if state.sensors_fail:
+                    return self._send(500, {"error": {"key": "no_sensors", "message": "no sensors", "hint": None}})
+                return self._send(200, {"sensors": {"list": [], "cpu_temp": 48.3, "hot_limit": 60, "unit": "C"}, "took": 0.0})
             if path == "/api/info/version":
-                v = lambda s: {"local": {"version": s}}
-                return self._send(200, {"version": {"core": v("v6.1"), "web": v("v6.1"), "ftl": v("v6.1.2")}})
+                def v(local, remote="same"):
+                    if remote == "same": remote = local
+                    return {"local": {"branch": "master", "version": local, "hash": "abc"}, "remote": {"version": remote, "hash": "def"}}
+                mode = state.update_mode
+                ver = {"core": v("v6.1"), "web": v("v6.1"), "ftl": v("v6.1.2"), "docker": {"local": None, "remote": None}}
+                if mode == "updates":
+                    ver["core"] = v("v6.1", "v6.2"); ver["ftl"] = v("v6.1.2", "v6.2.1")
+                elif mode == "updates2":
+                    ver["core"] = v("v6.1", "v6.3"); ver["ftl"] = v("v6.1.2", "v6.2.1")
+                elif mode == "docker":
+                    ver["core"] = v("v6.1", "v6.2")
+                    ver["docker"] = {"local": "2025.02.0", "remote": "2025.03.1"}
+                elif mode == "custom":
+                    ver["core"] = {"local": {"branch": "my-fix", "version": "v6.1-12-gabc", "hash": "abc"}, "remote": {"version": None, "hash": None}}
+                return self._send(200, {"version": ver})
             if path == "/api/action/gravity" and method == "POST":
                 time.sleep(0.6)
                 return self._send(200, raw="[i] Neutrino emissions detected...\n[✓] Done.\n")

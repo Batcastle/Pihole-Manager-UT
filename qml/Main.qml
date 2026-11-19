@@ -2,6 +2,7 @@ import QtQuick 2.12
 import Lomiri.Components 1.3
 import Lomiri.Components.Popups 1.3
 import Qt.labs.settings 1.0
+import "Format.js" as Fmt
 
 MainView {
     id: root
@@ -21,6 +22,10 @@ MainView {
     property int refreshSecs: 10
     property string busyText: ""
 
+    // Pi-hole software updates (see handleVersion)
+    property var updateInfo: null            // Fmt.updateInfo() of the active server, or null
+    property var updateDialog: null          // the open dialog, if any
+
     readonly property var currentServer: (activeIndex >= 0 && activeIndex < servers.length)
                                          ? servers[activeIndex] : null
     readonly property bool hasServer: currentServer !== null
@@ -36,6 +41,7 @@ MainView {
         property string serversJson: "[]"
         property int activeIndex: 0
         property int refreshSecs: 10
+        property string dismissedUpdates: "{}"     // { "<server url>": "<update signature>" }
     }
 
     Api { id: apiClient }
@@ -66,7 +72,9 @@ MainView {
         domainsView.reset();
         statsView.reset();
         settingsView.reset();
+        updateInfo = null;
         refreshCurrent();
+        checkUpdates();
     }
 
     function saveServer(index, server) {
@@ -115,6 +123,51 @@ MainView {
         case 3: statsView.refresh(); break;
         case 4: settingsView.refresh(); break;
         }
+    }
+
+    // ---- Pi-hole update notice ------------------------------------------------
+
+    function _dismissedMap() {
+        try { var m = JSON.parse(store.dismissedUpdates); return (m && typeof m === "object") ? m : {}; } catch (e) { return {}; }
+    }
+
+    function store_clear_for_test() { store.dismissedUpdates = "{}"; }
+
+    function updateDismissed() {
+        return hasServer && updateInfo !== null && _dismissedMap()[currentServer.url] === updateInfo.signature;
+    }
+
+    function dismissUpdate() {
+        if (!hasServer || updateInfo === null) return;
+        var m = _dismissedMap();
+        m[currentServer.url] = updateInfo.signature;
+        store.dismissedUpdates = JSON.stringify(m);
+    }
+
+    // Called with every /info/version response. `allowDialog` is false for the silent refresh in the More tab.
+    function handleVersion(data, allowDialog) {
+        if (!hasServer) return;
+        var info = Fmt.updateInfo(data);
+        updateInfo = info.available ? info : null;
+        if (info.available && allowDialog && !updateDismissed()) showUpdateDialog();
+    }
+
+    function checkUpdates() {
+        if (!hasServer) return;
+        var url = currentServer.url;
+        apiClient.call("GET", "/info/version", null, function(err, data) {
+            // ignore the answer if the user has switched to another Pi-hole in the meantime
+            if (err || !data || !hasServer || currentServer.url !== url) return;
+            handleVersion(data, true);
+        });
+    }
+
+    function showUpdateDialog() {
+        if (updateInfo === null || updateDialog !== null) return;
+        var d = PopupUtils.open(updateDialogComponent, root, { info: updateInfo, serverName: currentServer.name });
+        d.dismissed.connect(function() { root.dismissUpdate(); });
+        d.gone.connect(function() { if (root.updateDialog === d) root.updateDialog = null; });
+        updateDialog = d;
     }
 
     function toast(message, isError) {
@@ -227,6 +280,7 @@ MainView {
     Component { id: domainEditDialog; DomainEditDialog {} }
     Component { id: queryDetailDialog; QueryDetailDialog {} }
     Component { id: queryFilterDialog; QueryFilterDialog {} }
+    Component { id: updateDialogComponent; UpdateDialog {} }
 
     Component {
         id: domainActionDialog

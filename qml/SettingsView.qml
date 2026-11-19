@@ -16,6 +16,7 @@ Item {
         if (!app || !app.hasServer) { versionText = ""; return; }
         app.api.call("GET", "/info/version", null, function(err, data) {
             if (err || !data || !data.version) { versionText = ""; return; }
+            app.handleVersion(data, false);
             function v(part) {
                 try { return data.version[part].local.version || "?"; } catch (e) { return "?"; }
             }
@@ -192,12 +193,51 @@ Item {
                 text: view.versionText
                 color: theme.palette.normal.backgroundSecondaryText
             }
+            Rectangle {
+                id: updateRow
+                objectName: "updateRow"
+                width: parent.width
+                height: updateCol.height + units.gu(3)
+                radius: units.gu(1.5)
+                color: theme.palette.normal.foreground
+                border.width: units.dp(2)
+                border.color: theme.palette.normal.activity
+                visible: !!view.app && view.app.updateInfo !== null
+
+                Column {
+                    id: updateCol
+                    anchors { left: parent.left; right: parent.right; top: parent.top; margins: units.gu(1.5) }
+                    spacing: units.gu(1)
+                    Label {
+                        width: parent.width
+                        font.bold: true
+                        wrapMode: Text.WordWrap
+                        text: i18n.tr("Pi-hole update available")
+                    }
+                    Label {
+                        width: parent.width
+                        textSize: Label.Small
+                        wrapMode: Text.WordWrap
+                        color: theme.palette.normal.backgroundSecondaryText
+                        text: {
+                            var info = view.app ? view.app.updateInfo : null;
+                            if (!info) return "";
+                            var names = { core: i18n.tr("Core"), web: i18n.tr("Web"), ftl: i18n.tr("FTL"), docker: i18n.tr("Docker image") };
+                            return info.components.map(function(c) { return (names[c.key] || c.key) + " " + c.local + " → " + c.remote; }).join(" · ");
+                        }
+                    }
+                    Button {
+                        text: i18n.tr("Details and update guide")
+                        onClicked: view.app.showUpdateDialog()
+                    }
+                }
+            }
             Label {
                 width: parent.width
                 wrapMode: Text.WordWrap
                 textSize: Label.Small
                 color: theme.palette.normal.backgroundSecondaryText
-                text: i18n.tr("Pi-hole Manager 0.1.0. Works with Pi-hole v6. Passwords are stored on this device, in this app's private storage. If your Pi-hole uses two-factor authentication, create an app password in its web interface and use that.")
+                text: i18n.tr("Pi-hole Manager 0.2.0. Works with Pi-hole v6. Passwords are stored on this device, in this app's private storage. If your Pi-hole uses two-factor authentication, create an app password in its web interface and use that.")
             }
         }
     }
